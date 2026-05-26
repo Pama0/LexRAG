@@ -11,7 +11,9 @@ print("-" * 50)
 # 获取所有文档
 all_docs = collection.get(include=["documents", "metadatas"])
 
-for i, doc in enumerate(all_docs['documents'],10):
+for i, doc in enumerate(all_docs['documents']):
+    if i==10:
+        break
     print(f"[{i+1}] ID: {all_docs['ids'][i]}")
     print(f"    内容: {doc[:100]}..." if len(doc) > 100 else f"    内容: {doc}")
     print(f"    元数据: {all_docs['metadatas'][i]}")

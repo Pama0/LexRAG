@@ -24,5 +24,15 @@ openai
 zhipuai
 
 # 文档解析
+PyMuPDF
 docx2txt
 pypdf
+
+# Web 框架
+fastapi
+uvicorn
+python-multipart
+
+# 数据库（会话历史持久化）
+sqlalchemy>=2.0
+aiosqlite

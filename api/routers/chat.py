@@ -6,9 +6,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from api import repositories as repo
-from api.agent_service import AgentService
-from api.db import get_session
+from core.persistence import repositories as repo
+from core.agent.agent import BookAgent
+from core.persistence.db import get_session
 from api.schemas import ChatRequest, ChatResponse, SourceRef
 from core.agent.source_context import begin_collection, get_sources
 
@@ -34,7 +34,7 @@ async def _ensure_session(session_id: Optional[str]) -> str:
         return new_sess.id
 
 
-def create_chat_router(agent_service: AgentService) -> APIRouter:
+def create_chat_router(agent_service: BookAgent) -> APIRouter:
     """工厂函数：注入 agent_service 依赖"""
     router = APIRouter(prefix="/api", tags=["chat"])
 

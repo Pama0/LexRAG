@@ -667,8 +667,11 @@ Expected: `trunk ok`
 
 - [ ] **Step 6: 提交**
 
+> ⚠️ 仓库里 `.venv/`、`**/__pycache__` 是被跟踪的垃圾文件。**禁止** `git add -A`/`git add .`（裸）。
+> `git mv` 已暂存源端删除；只需显式 `git add legacy/` 收拢新增/改写文件。
+
 ```bash
-git add -A
+git add legacy/
 git commit -m "refactor: freeze legacy legal code under legacy/, keep trunk book-only"
 ```
 
