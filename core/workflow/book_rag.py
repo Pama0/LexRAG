@@ -80,6 +80,18 @@ class BookRagWorkflow(Workflow):
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return True, query
 
+    async def _decide(self, query: str, round: int) -> tuple[str, str]:
+        """决定下一步。返回 (action, query)，action ∈ {'retrieve', 'rewrite'}。
+
+        达到 MAX_ROUNDS 直接检索，不再调用 LLM。
+        """
+        if round >= MAX_ROUNDS:
+            return "retrieve", query
+        clear, rewritten = await self._judge_query(query)
+        if clear:
+            return "retrieve", query
+        return "rewrite", rewritten
+
     @step
     async def _entry(self, ev: StartEvent) -> StopEvent:
         """占位入口步骤。

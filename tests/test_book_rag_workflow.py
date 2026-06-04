@@ -47,3 +47,28 @@ async def test_judge_query_malformed_falls_back_to_clear():
     clear, q = await wf._judge_query("讲讲数据库")
     assert clear is True          # 解析失败 → 当作明确,不阻塞
     assert q == "讲讲数据库"       # 用原 query
+
+
+async def test_decide_clear_routes_to_retrieve():
+    llm = FakeLLM(['{"clear": true, "rewritten_query": "B+树"}'])
+    wf = _make_wf(llm)
+    action, q = await wf._decide("B+树", round=0)
+    assert action == "retrieve"
+    assert q == "B+树"
+
+
+async def test_decide_unclear_routes_to_rewrite():
+    llm = FakeLLM(['{"clear": false, "rewritten_query": "数据库索引原理"}'])
+    wf = _make_wf(llm)
+    action, q = await wf._decide("讲讲数据库", round=0)
+    assert action == "rewrite"
+    assert q == "数据库索引原理"
+
+
+async def test_decide_caps_at_max_rounds_without_calling_llm():
+    llm = FakeLLM([])  # 队列为空：若被调用会 IndexError
+    wf = _make_wf(llm)
+    action, q = await wf._decide("还是很泛", round=2)
+    assert action == "retrieve"   # 达上限直接检索
+    assert q == "还是很泛"
+    assert llm.calls == 0         # 未再调用 LLM
