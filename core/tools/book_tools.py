@@ -9,12 +9,11 @@
 """
 from typing import Optional
 
-from llama_index.core import get_response_synthesizer
 from llama_index.core.llms import LLM
 from llama_index.core.tools import FunctionTool
-from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
 
 from core.agent.source_context import add_sources, node_to_source_ref
+from core.workflow.book_rag import BookRagWorkflow
 
 
 def create_book_search_tool(
@@ -50,28 +49,19 @@ def create_book_search_tool(
         if index is None:
             return "知识库为空，请先在「文档管理」上传 PDF。"
 
-        filters = None
-        if book_title:
-            filters = MetadataFilters(filters=[
-                MetadataFilter(key="book_title", value=book_title),
-            ])
-
-        retriever = index.as_retriever(
+        workflow = BookRagWorkflow(
+            index_manager=index_manager,
+            llm=llm,
             similarity_top_k=similarity_top_k,
-            filters=filters,
         )
-        nodes = await retriever.aretrieve(query)
+        result = await workflow.run(query=query, book_title=book_title)
 
-        if not nodes:
+        if not result.source_nodes:
             scope = f"《{book_title}》中" if book_title else "知识库中"
             return f"在{scope}没有检索到与「{query}」相关的内容。"
 
-        # 把 source 写入请求级容器
-        add_sources([node_to_source_ref(n) for n in nodes])
-
-        synthesizer = get_response_synthesizer(llm=llm)
-        response = await synthesizer.asynthesize(query=query, nodes=nodes)
-        return str(response)
+        add_sources([node_to_source_ref(n) for n in result.source_nodes])
+        return str(result)
 
     return FunctionTool.from_defaults(
         fn=book_search,
