@@ -36,3 +36,7 @@ python-multipart
 # 数据库（会话历史持久化）
 sqlalchemy>=2.0
 aiosqlite
+
+# Testing
+pytest
+pytest-asyncio
