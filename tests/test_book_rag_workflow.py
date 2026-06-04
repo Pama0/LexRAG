@@ -21,6 +21,29 @@ class FakeLLM:
         return _Resp(self._responses.pop(0))
 
 
+class FakeRetriever:
+    def __init__(self, nodes):
+        self._nodes = nodes
+    async def aretrieve(self, query):
+        return self._nodes
+
+
+class FakeIndex:
+    def __init__(self, nodes):
+        self._nodes = nodes
+        self.last_kw = None
+    def as_retriever(self, **kw):
+        self.last_kw = kw
+        return FakeRetriever(self._nodes)
+
+
+class FakeIndexManager:
+    def __init__(self, nodes):
+        self._index = FakeIndex(nodes)
+    def get_index(self):
+        return self._index
+
+
 def _make_wf(llm, index_manager=None):
     return BookRagWorkflow(index_manager=index_manager, llm=llm, similarity_top_k=3)
 
@@ -72,3 +95,21 @@ async def test_decide_caps_at_max_rounds_without_calling_llm():
     assert action == "retrieve"   # 达上限直接检索
     assert q == "还是很泛"
     assert llm.calls == 0         # 未再调用 LLM
+
+
+async def test_retrieve_nodes_passes_top_k_and_returns_nodes():
+    llm = FakeLLM([])
+    im = FakeIndexManager(nodes=["n1", "n2"])
+    wf = _make_wf(llm, index_manager=im)
+    nodes = await wf._retrieve_nodes("B+树", book_title=None)
+    assert nodes == ["n1", "n2"]
+    assert im._index.last_kw["similarity_top_k"] == 3
+    assert im._index.last_kw["filters"] is None
+
+
+async def test_retrieve_nodes_builds_book_title_filter():
+    llm = FakeLLM([])
+    im = FakeIndexManager(nodes=["n1"])
+    wf = _make_wf(llm, index_manager=im)
+    await wf._retrieve_nodes("B+树", book_title="MySQL是怎样运行的")
+    assert im._index.last_kw["filters"] is not None

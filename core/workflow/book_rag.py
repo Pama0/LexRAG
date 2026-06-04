@@ -92,12 +92,45 @@ class BookRagWorkflow(Workflow):
             return "retrieve", query
         return "rewrite", rewritten
 
-    @step
-    async def _entry(self, ev: StartEvent) -> StopEvent:
-        """占位入口步骤。
+    def _make_filters(self, book_title: Optional[str]):
+        if not book_title:
+            return None
+        return MetadataFilters(filters=[
+            MetadataFilter(key="book_title", value=book_title),
+        ])
 
-        llama-index-workflows 在 __init__ 时强制要求至少有一个 @step 接收
-        StartEvent，否则无法实例化（_ensure_start_event_class）。本步骤仅为满足
-        该结构约束，真正的 judge → retrieve → synthesize 路由由后续任务实现替换。
-        """
-        raise NotImplementedError("workflow 步骤将在后续任务实现")
+    async def _retrieve_nodes(self, query: str, book_title: Optional[str]):
+        index = self.index_manager.get_index()
+        retriever = index.as_retriever(
+            similarity_top_k=self.similarity_top_k,
+            filters=self._make_filters(book_title),
+        )
+        return await retriever.aretrieve(query)
+
+    @step
+    async def start(self, ev: StartEvent) -> JudgeEvent:
+        return JudgeEvent(
+            query=ev.query,
+            book_title=getattr(ev, "book_title", None),
+            round=0,
+        )
+
+    @step
+    async def judge(self, ev: JudgeEvent) -> "JudgeEvent | RetrieveEvent":
+        action, q = await self._decide(ev.query, ev.round)
+        if action == "retrieve":
+            return RetrieveEvent(query=q, book_title=ev.book_title)
+        return JudgeEvent(query=q, book_title=ev.book_title, round=ev.round + 1)
+
+    @step
+    async def retrieve(self, ev: RetrieveEvent) -> "SynthesizeEvent | StopEvent":
+        nodes = await self._retrieve_nodes(ev.query, ev.book_title)
+        if not nodes:
+            return StopEvent(result=Response(response="", source_nodes=[]))
+        return SynthesizeEvent(query=ev.query, nodes=nodes)
+
+    @step
+    async def synthesize(self, ev: SynthesizeEvent) -> StopEvent:
+        synthesizer = get_response_synthesizer(llm=self.llm)
+        response = await synthesizer.asynthesize(query=ev.query, nodes=ev.nodes)
+        return StopEvent(result=response)
