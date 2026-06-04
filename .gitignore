@@ -21,6 +21,17 @@ chroma_db/
 chroma_db_single_test/
 storage/
 
+# SQLite 数据库（运行时生成）
+*.db
+
+# 上传的书籍 PDF 数据（运行时生成，体积大）
+data/books/*
+!data/books/.gitkeep
+
+# 前端依赖与构建产物
+node_modules/
+frontend/dist/
+
 # 临时文件
 temp_data/
 test_data/
