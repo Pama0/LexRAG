@@ -104,7 +104,8 @@ class BookRagWorkflowSystem:   # 包装 core.workflow.book_rag.BookRagWorkflow
 
 ### 6.4 generate_testset.py — 改编 legacy
 
-- 从项目现有 chroma（复用 `core.rag.data_loader.RAGIndexManager` / 项目 chroma 配置）载入 book 切片，转 LangChain `Document`，metadata 带 `book_title` 等。
+- 从项目现有 chroma（复用 `core.rag.data_loader.RAGIndexManager` / 项目 chroma 配置）载入 book 切片，逐条包成 LangChain `Document`（`page_content`=正文，`metadata` 带 `book_title` 等），喂给 `TestsetGenerator.generate_with_chunks(chunks=...)`。
+- **取舍记录**：0.4.3 另有 `generate_with_llamaindex_docs`（零格式转换、但 ragas 自行重新切块）。本设计选 `generate_with_chunks`——复用 chroma 已切块，使测试集 `reference_contexts` 的粒度与线上检索单元一致，更利于 Context Precision/Recall 评测。代价是需 LangChain Document 格式适配（纯包壳，不改内容）。
 - book 领域 Persona（如"读技术书、提出具体技术问题的工程师/学习者"）。
 - 问题分布：单跳 `SingleHopSpecificQuerySynthesizer` 60% + 多跳 `MultiHopSpecificQuerySynthesizer` 40%。
 - 中文 prompt 适配（`adapt_prompts("chinese", llm=...)`）。
