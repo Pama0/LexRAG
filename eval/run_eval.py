@@ -79,9 +79,10 @@ async def _run(testset_path: str, limit: int | None) -> dict:
     from ragas import Dataset, experiment
     from ragas.backends import LocalCSVBackend
 
-    from eval.config import RESULTS_DIR, make_eval_embeddings, make_eval_llm
+    from eval.config import CHROMA_DIR, RESULTS_DIR, make_eval_embeddings, make_eval_llm
     from eval.metrics import build_metric_specs
     from eval.sut import BookRagWorkflowSystem
+    from configs.embedding import configure_embedding
     from configs.llm import configure_llm
     from core.rag.data_loader import RAGIndexManager
 
@@ -93,7 +94,12 @@ async def _run(testset_path: str, limit: int | None) -> dict:
     eval_emb = make_eval_embeddings()
     metric_specs = build_metric_specs(eval_llm, eval_emb)
 
-    sut = BookRagWorkflowSystem(index_manager=RAGIndexManager(), llm=configure_llm())
+    # SUT 检索需要全局 Settings.embed_model 与 llm，二者都要先配置
+    sut_llm = configure_llm()
+    configure_embedding()
+    sut = BookRagWorkflowSystem(
+        index_manager=RAGIndexManager(persist_dir=CHROMA_DIR), llm=sut_llm
+    )
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
     backend = LocalCSVBackend(root_dir=RESULTS_DIR)

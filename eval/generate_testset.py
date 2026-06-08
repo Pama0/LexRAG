@@ -31,11 +31,18 @@ def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCD
 
 
 def load_book_chunks() -> list[LCDocument]:
-    """从项目 chroma 全量取出 book 切片并转 LangChain Document。"""
-    from core.rag.data_loader import RAGIndexManager
+    """从项目 chroma 全量取出 book 切片并转 LangChain Document。
 
-    mgr = RAGIndexManager()  # persist_dir=./chroma_db, collection=book_knowledge
-    data = mgr.chroma_collection.get(include=["documents", "metadatas"])
+    直接用 chromadb 读原始文本+元数据，绕开 RAGIndexManager——后者在 collection
+    有数据时会急切构建 VectorStoreIndex（需要全局 embed_model），而此处只读不检索。
+    """
+    import chromadb
+
+    from eval.config import CHROMA_COLLECTION, CHROMA_DIR
+
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
+    collection = client.get_or_create_collection(CHROMA_COLLECTION)
+    data = collection.get(include=["documents", "metadatas"])
     chunks = chunks_to_langchain(data["documents"], data["metadatas"])
     print(f"从 chroma 加载 {len(chunks)} 条 book 切片")
     return chunks

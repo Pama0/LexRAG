@@ -11,25 +11,29 @@ load_dotenv()
 
 # ── 路径 ──────────────────────────────────────────────
 EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(EVAL_DIR)
 DATASET_DIR = os.path.join(EVAL_DIR, "dataset")
 TESTSET_PATH = os.path.join(DATASET_DIR, "testset.jsonl")
 TESTSET_DRAFT_PATH = os.path.join(DATASET_DIR, "testset.draft.jsonl")
 RESULTS_DIR = os.path.join(EVAL_DIR, "results")
+# chroma 用绝对路径锚定项目根，避免脚本因工作目录不同读到错误/空库
+CHROMA_DIR = os.path.join(PROJECT_ROOT, "chroma_db")
+CHROMA_COLLECTION = "book_knowledge"
 
 # ── 评测侧模型 ────────────────────────────────────────
-EVAL_LLM_MODEL = "glm-4-flash"
-EVAL_LLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
+EVAL_LLM_MODEL = "deepseek-v4-flash"
+EVAL_LLM_BASE_URL = "https://api.deepseek.com/v1"
 EVAL_EMBED_MODEL = "BAAI/bge-small-zh-v1.5"
 
 
 def make_eval_llm():
-    """评测 judge LLM：llm_factory + 智谱 OpenAI 兼容端点。"""
+    """评测 judge LLM：llm_factory + DeepSeek OpenAI 兼容端点。"""
     import openai
     from ragas.llms import llm_factory
 
     client = openai.AsyncOpenAI(
         base_url=EVAL_LLM_BASE_URL,
-        api_key=os.getenv("ZHIPU_API_KEY"),
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
     )
     return llm_factory(EVAL_LLM_MODEL, client=client)
 
