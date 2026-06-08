@@ -26,6 +26,24 @@ def sample_chunks(chunks: list, max_chunks: int | None, seed: int = 42) -> list:
     return [chunks[i] for i in idx]
 
 
+def filter_by_book(documents: list[str], metadatas: list[dict],
+                   book_filter: str | None) -> tuple[list[str], list[dict]]:
+    """按 book_title 子串（不区分大小写）筛选并行的 (正文, 元数据) 列表。
+
+    book_filter 为 None 时原样返回；book_knowledge 可能混多本书，用它只取目标书。
+    """
+    if not book_filter:
+        return documents, metadatas
+    needle = book_filter.lower()
+    docs, metas = [], []
+    for d, m in zip(documents, metadatas):
+        title = str((m or {}).get("book_title", "")).lower()
+        if needle in title:
+            docs.append(d)
+            metas.append(m)
+    return docs, metas
+
+
 def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCDocument]:
     """把 chroma 的 (正文, 元数据) 逐条包成 LangChain Document，跳过空文本。"""
     out: list[LCDocument] = []
@@ -44,8 +62,9 @@ def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCD
     return out
 
 
-def load_book_chunks(max_chunks: int | None = None, seed: int = 42) -> list[LCDocument]:
-    """从项目 chroma 取 book 切片并转 LangChain Document；max_chunks 限制喂入量。
+def load_book_chunks(max_chunks: int | None = None, seed: int = 42,
+                     book_filter: str | None = None) -> list[LCDocument]:
+    """从项目 chroma 取 book 切片并转 LangChain Document；可按书名过滤、限喂入量。
 
     直接用 chromadb 读原始文本+元数据，绕开 RAGIndexManager——后者在 collection
     有数据时会急切构建 VectorStoreIndex（需要全局 embed_model），而此处只读不检索。
@@ -57,13 +76,16 @@ def load_book_chunks(max_chunks: int | None = None, seed: int = 42) -> list[LCDo
     client = chromadb.PersistentClient(path=CHROMA_DIR)
     collection = client.get_or_create_collection(CHROMA_COLLECTION)
     data = collection.get(include=["documents", "metadatas"])
-    chunks = chunks_to_langchain(data["documents"], data["metadatas"])
+    docs, metas = filter_by_book(data["documents"], data["metadatas"], book_filter)
+    chunks = chunks_to_langchain(docs, metas)
     sampled = sample_chunks(chunks, max_chunks, seed)
-    print(f"从 chroma 加载 {len(chunks)} 条 book 切片，喂入 {len(sampled)} 条（max_chunks={max_chunks}）")
+    print(f"从 chroma 加载 {len(chunks)} 条 book 切片"
+          f"（book_filter={book_filter!r}），喂入 {len(sampled)} 条（max_chunks={max_chunks}）")
     return sampled
 
 
-async def generate(size: int, max_chunks: int | None = 60, seed: int = 42) -> None:
+async def generate(size: int, max_chunks: int | None = 60, seed: int = 42,
+                   book_filter: str | None = None) -> None:
     from ragas.testset import TestsetGenerator
     from ragas.testset.persona import Persona
     from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
@@ -71,7 +93,7 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42) -> No
 
     from eval.config import DATASET_DIR, TESTSET_DRAFT_PATH, make_eval_embeddings, make_eval_llm
 
-    chunks = load_book_chunks(max_chunks=max_chunks, seed=seed)
+    chunks = load_book_chunks(max_chunks=max_chunks, seed=seed, book_filter=book_filter)
     if not chunks:
         raise SystemExit("chroma 无 book 切片，先入库（python main.py 入库流程）再生成测试集")
 
@@ -109,7 +131,7 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42) -> No
         for sample in eval_dataset.to_list():
             f.write(json.dumps(sample, ensure_ascii=False) + "\n")
     print(f"草稿已写入 {TESTSET_DRAFT_PATH}（共 {len(eval_dataset.to_list())} 条）")
-    print("⚠️ 人工校验后另存为 testset.jsonl，再跑 run_eval。")
+    print("[注意] 人工校验后另存为 testset.jsonl，再跑 run_eval。")
 
 
 def main():
@@ -118,9 +140,11 @@ def main():
     parser.add_argument("--max-chunks", type=int, default=60,
                         help="喂入 ragas 的 chunk 上限（建图成本随此线性增长）；传 0 表示全量")
     parser.add_argument("--seed", type=int, default=42, help="抽样随机种子")
+    parser.add_argument("--book", default=None,
+                        help="按 book_title 子串过滤（不区分大小写），如 MySQL；缺省用全部书")
     args = parser.parse_args()
     max_chunks = None if args.max_chunks == 0 else args.max_chunks
-    asyncio.run(generate(args.size, max_chunks=max_chunks, seed=args.seed))
+    asyncio.run(generate(args.size, max_chunks=max_chunks, seed=args.seed, book_filter=args.book))
 
 
 if __name__ == "__main__":

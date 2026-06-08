@@ -1,4 +1,4 @@
-from eval.generate_testset import chunks_to_langchain, sample_chunks
+from eval.generate_testset import chunks_to_langchain, filter_by_book, sample_chunks
 
 
 def test_chunks_to_langchain_wraps_text_and_metadata():
@@ -39,3 +39,25 @@ def test_sample_chunks_returns_all_when_below_cap():
 def test_sample_chunks_none_returns_all():
     chunks = list(range(50))
     assert sample_chunks(chunks, max_chunks=None, seed=42) == chunks
+
+
+def test_filter_by_book_substring_case_insensitive():
+    docs = ["a", "b", "c"]
+    metas = [{"book_title": "深入理解MySQL"}, {"book_title": "openclaw_guide-v1.2.2"}, {"book_title": "MYSQL 实战"}]
+    fd, fm = filter_by_book(docs, metas, "mysql")
+    assert fd == ["a", "c"]
+    assert fm == [{"book_title": "深入理解MySQL"}, {"book_title": "MYSQL 实战"}]
+
+
+def test_filter_by_book_none_returns_all():
+    docs = ["a", "b"]
+    metas = [{"book_title": "X"}, {"book_title": "Y"}]
+    fd, fm = filter_by_book(docs, metas, None)
+    assert fd == docs and fm == metas
+
+
+def test_filter_by_book_missing_title_excluded():
+    docs = ["a", "b"]
+    metas = [{"book_title": "MySQL"}, {}]
+    fd, fm = filter_by_book(docs, metas, "mysql")
+    assert fd == ["a"]
