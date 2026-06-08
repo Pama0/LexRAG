@@ -4,6 +4,9 @@
 已 TDD；下半部 main 是 @experiment + Dataset 装配，靠集成 smoke 验证。
 """
 import json
+import argparse
+import asyncio
+import os
 
 from eval.metrics import METRIC_NAMES, MetricSpec
 from eval.sut import RagOutput, RagSystem
@@ -70,3 +73,54 @@ def aggregate(rows: list[dict]) -> dict:
         "outcome_distribution": outcomes,
         "metric_means": metric_means,
     }
+
+
+async def _run(testset_path: str, limit: int | None) -> dict:
+    from ragas import Dataset, experiment
+    from ragas.backends import LocalCSVBackend
+
+    from eval.config import RESULTS_DIR, make_eval_embeddings, make_eval_llm
+    from eval.metrics import build_metric_specs
+    from eval.sut import BookRagWorkflowSystem
+    from configs.llm import configure_llm
+    from core.rag.data_loader import RAGIndexManager
+
+    rows = load_testset(testset_path)
+    if limit:
+        rows = rows[:limit]
+
+    eval_llm = make_eval_llm()
+    eval_emb = make_eval_embeddings()
+    metric_specs = build_metric_specs(eval_llm, eval_emb)
+
+    sut = BookRagWorkflowSystem(index_manager=RAGIndexManager(), llm=configure_llm())
+
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    backend = LocalCSVBackend(root_dir=RESULTS_DIR)
+    dataset = Dataset(name="book_testset", backend=backend, data=rows)
+
+    @experiment()
+    async def book_rag_experiment(row, sut, metric_specs):
+        return await score_row(_row_to_dict(row), sut, metric_specs)
+
+    exp = await book_rag_experiment.arun(
+        dataset, name="book_rag", sut=sut, metric_specs=metric_specs,
+    )
+    result_rows = [_row_to_dict(r) for r in exp.to_pandas().to_dict("records")]
+    return aggregate(result_rows)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Book RAG ragas 评测")
+    parser.add_argument("--testset", default=None, help="测试集 jsonl 路径")
+    parser.add_argument("--limit", type=int, default=None, help="只跑前 N 条")
+    args = parser.parse_args()
+
+    from eval.config import TESTSET_PATH
+    path = args.testset or TESTSET_PATH
+    report = asyncio.run(_run(path, args.limit))
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
