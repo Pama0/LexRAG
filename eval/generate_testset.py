@@ -8,8 +8,22 @@ import argparse
 import asyncio
 import json
 import os
+import random
 
 from langchain_core.documents import Document as LCDocument
+
+
+def sample_chunks(chunks: list, max_chunks: int | None, seed: int = 42) -> list:
+    """chunk 数超过 max_chunks 时固定种子随机抽样，否则原样返回。
+
+    ragas 建知识图谱的成本随喂入 chunk 数线性增长（与 testset_size 无关），
+    小规模生成时必须抽样，否则会对全量 chunk 跑多遍 LLM。
+    """
+    if max_chunks is None or len(chunks) <= max_chunks:
+        return chunks
+    rng = random.Random(seed)
+    idx = sorted(rng.sample(range(len(chunks)), max_chunks))
+    return [chunks[i] for i in idx]
 
 
 def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCDocument]:
@@ -30,8 +44,8 @@ def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCD
     return out
 
 
-def load_book_chunks() -> list[LCDocument]:
-    """从项目 chroma 全量取出 book 切片并转 LangChain Document。
+def load_book_chunks(max_chunks: int | None = None, seed: int = 42) -> list[LCDocument]:
+    """从项目 chroma 取 book 切片并转 LangChain Document；max_chunks 限制喂入量。
 
     直接用 chromadb 读原始文本+元数据，绕开 RAGIndexManager——后者在 collection
     有数据时会急切构建 VectorStoreIndex（需要全局 embed_model），而此处只读不检索。
@@ -44,11 +58,12 @@ def load_book_chunks() -> list[LCDocument]:
     collection = client.get_or_create_collection(CHROMA_COLLECTION)
     data = collection.get(include=["documents", "metadatas"])
     chunks = chunks_to_langchain(data["documents"], data["metadatas"])
-    print(f"从 chroma 加载 {len(chunks)} 条 book 切片")
-    return chunks
+    sampled = sample_chunks(chunks, max_chunks, seed)
+    print(f"从 chroma 加载 {len(chunks)} 条 book 切片，喂入 {len(sampled)} 条（max_chunks={max_chunks}）")
+    return sampled
 
 
-async def generate(size: int) -> None:
+async def generate(size: int, max_chunks: int | None = 60, seed: int = 42) -> None:
     from ragas.testset import TestsetGenerator
     from ragas.testset.persona import Persona
     from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
@@ -56,7 +71,7 @@ async def generate(size: int) -> None:
 
     from eval.config import DATASET_DIR, TESTSET_DRAFT_PATH, make_eval_embeddings, make_eval_llm
 
-    chunks = load_book_chunks()
+    chunks = load_book_chunks(max_chunks=max_chunks, seed=seed)
     if not chunks:
         raise SystemExit("chroma 无 book 切片，先入库（python main.py 入库流程）再生成测试集")
 
@@ -99,9 +114,13 @@ async def generate(size: int) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="生成 book RAG 测试集草稿")
-    parser.add_argument("--size", type=int, default=50, help="测试集条数")
+    parser.add_argument("--size", type=int, default=5, help="测试集条数")
+    parser.add_argument("--max-chunks", type=int, default=60,
+                        help="喂入 ragas 的 chunk 上限（建图成本随此线性增长）；传 0 表示全量")
+    parser.add_argument("--seed", type=int, default=42, help="抽样随机种子")
     args = parser.parse_args()
-    asyncio.run(generate(args.size))
+    max_chunks = None if args.max_chunks == 0 else args.max_chunks
+    asyncio.run(generate(args.size, max_chunks=max_chunks, seed=args.seed))
 
 
 if __name__ == "__main__":
