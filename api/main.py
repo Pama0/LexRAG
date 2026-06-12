@@ -10,8 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from configs.llm import configure_llm
 from configs.embedding import configure_embedding
 from core.rag.data_loader import RAGIndexManager
-from core.tools.book_tools import create_book_search_tool, create_list_books_tool, create_simple_book_search
-from core.agent.agent import BookAgent
+from core.workflow.doc_query_service import DocQueryService
 from core.persistence.db import init_db
 from api.routers.chat import create_chat_router
 from api.routers.documents import create_documents_router
@@ -85,20 +84,15 @@ def create_app() -> FastAPI:
         collection_name="book_knowledge",
     )
 
-    # 装配 Agent 工具（工具持有 index_manager 引用，空库时也能启动）
-    print("Building Agent tools...")
-    tools = [
-        # create_book_search_tool(index_manager, llm),
-        create_list_books_tool(index_manager),
-        create_simple_book_search(index_manager, llm),
-
-    ]
-    book_agent = BookAgent(tools=tools, llm=llm)
+    # 顶层编排：DocQueryWorkflow（门口 Router → QA 检索合成）的装配服务。
+    # 持有 index_manager 引用，空库时也能启动；每请求新建 workflow。
+    print("Building query service (DocQueryWorkflow)...")
+    query_service = DocQueryService(index_manager=index_manager, llm=llm)
 
     # 注册路由
-    chat_router = create_chat_router(book_agent)
+    chat_router = create_chat_router(query_service)
     doc_router = create_documents_router(index_manager)
-    sessions_router = create_sessions_router(book_agent)
+    sessions_router = create_sessions_router(query_service)
     app.include_router(chat_router)
     app.include_router(doc_router)
     app.include_router(sessions_router)

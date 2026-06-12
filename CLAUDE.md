@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-LLM 学习/实验项目，技术书籍知识库助手（上传 PDF + RAG 问答），使用智谱 AI GLM 作为底层 LLM。
+LLM 学习/实验项目，技术书籍知识库助手（上传 PDF + RAG 问答）。底层 LLM 为 DeepSeek（`OpenAILike` 接入，已关 thinking，见 `configs/llm.py`）；评测侧（`eval/`）刻意沿用智谱 GLM，与被测系统解耦。
 
 ## Environment
 
 - Python 3.12+，虚拟环境 `.venv`
 - 激活：`.venv\Scripts\activate` (PowerShell) / `source .venv/Scripts/activate` (Git Bash)
-- API Key 存放在 `.env`：`ZHIPU_API_KEY=your_api_key`
+- API Key 存放在 `.env`：`DEEPSEEK_API_KEY`（主系统）+ `ZHIPU_API_KEY`（评测侧）
 
 ## Running
 

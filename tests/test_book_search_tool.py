@@ -66,6 +66,6 @@ async def test_book_search_no_nodes_returns_scope_hint(monkeypatch):
     monkeypatch.setattr(book_tools, "BookRagWorkflow", StubWorkflow)
 
     tool = create_book_search_tool(FakeIndexManager(), llm=object())
-    result = await tool.async_fn(query="不存在的内容", book_title="某本书")
+    result = await tool.async_fn(query="不存在的内容")
     assert "没有检索到" in result
-    assert "某本书" in result
+    assert "知识库" in result

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 
 from core.persistence import repositories as repo
-from core.agent.agent import BookAgent
+from core.workflow.doc_query_service import DocQueryService
 from core.persistence.db import get_session
 from api.schemas import (
     CreateSessionRequest,
@@ -15,7 +15,7 @@ from api.schemas import (
 )
 
 
-def create_sessions_router(agent_service: BookAgent) -> APIRouter:
+def create_sessions_router(query_service: DocQueryService) -> APIRouter:
     router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
     @router.get("", response_model=SessionListResponse)
@@ -88,7 +88,7 @@ def create_sessions_router(agent_service: BookAgent) -> APIRouter:
             if not ok:
                 raise HTTPException(status_code=404, detail="会话不存在")
         # 一并清掉内存里的并发锁
-        agent_service.reset(session_id)
+        query_service.reset(session_id)
         return {"deleted": True, "session_id": session_id}
 
     return router

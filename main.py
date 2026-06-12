@@ -12,9 +12,8 @@ from dotenv import load_dotenv
 
 from configs.embedding import configure_embedding
 from configs.llm import configure_llm
-from core.agent.agent import BookAgent
 from core.rag.data_loader import RAGIndexManager
-from core.tools.book_tools import create_book_search_tool, create_list_books_tool
+from core.workflow.doc_query_service import DocQueryService
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 load_dotenv()
@@ -32,12 +31,8 @@ async def run() -> None:
         collection_name="book_knowledge",
     )
 
-    tools = [
-        create_book_search_tool(index_manager, llm),
-        create_list_books_tool(index_manager),
-    ]
-    agent = BookAgent(tools=tools, llm=llm)
-    await agent.chat()
+    service = DocQueryService(index_manager=index_manager, llm=llm)
+    await service.chat()
 
 
 if __name__ == "__main__":
