@@ -1,0 +1,199 @@
+"""QA capability：文档库问答的检索 + 合成实质逻辑（从 DocQueryWorkflow 抽出）。
+
+`DocQueryWorkflow` 是顶层 Router 编排，把 `intent=qa` dispatch 到这里。本类是
+注入式协作单元（与 `IntentRouter` / `QueryPreprocessor` / `QueryDecomposer` 同一
+模式），【不依赖 LlamaIndex Workflow step 机制】，便于独立单测。
+
+持有：
+- 检索（`index_manager`）+ 合成（`llm`）。
+- QA 内预处理 `QueryPreprocessor`（降噪 + 难度/明确性分类）。
+- 拆解 `QueryDecomposer`（宽问题 → ≤N 子查询）。
+
+对外暴露（均接收 query/book_titles，返回 (answer, source_nodes)，不碰流程事件）：
+- `classify(clean_query)` → 预处理结果（category / rewritten_query / reason）。
+- `retrieve(ctx, query, book_titles)` → 单轮检索 + 流式合成。
+- `split(ctx, query, book_titles)` → 拆解-检索-map-reduce 汇总（失败降级单轮）。
+- `assume` == `retrieve`（v1；声明角度逻辑后续补）。
+
+流式：检索/合成进度通过 `ctx.write_event_to_stream` 推【流式专用事件】（本模块定义，
+`doc_workflow` re-export、api 层映射成前端 SSE）。这些事件不参与 workflow step 图。
+"""
+from typing import Optional
+
+from llama_index.core import get_response_synthesizer
+from llama_index.core.llms import LLM
+from llama_index.core.vector_stores import (
+    FilterOperator,
+    MetadataFilter,
+    MetadataFilters,
+)
+from llama_index.core.workflow import Context, Event
+
+from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
+from core.workflow.query_decompose import QueryDecomposer
+from core.workflow.query_preprocess import QueryPreprocessor
+
+
+# ── 流式专用事件（仅 write_event_to_stream，不参与 step 图）──────────
+class RetrievalStartEvent(Event):
+    """开始检索（→ 前端 tool_call）。"""
+
+    query: str
+
+
+class RetrievalDoneEvent(Event):
+    """检索完成（→ 前端 tool_result，触发答案阶段）。"""
+
+    count: int
+
+
+class AnswerDeltaEvent(Event):
+    """合成阶段逐 token（→ 前端 delta）。"""
+
+    delta: str
+
+
+class QaCapability:
+    """文档库问答能力：降噪分类 → 检索 → 流式合成 / 拆解汇总。注入式，独立可测。"""
+
+    def __init__(
+        self,
+        index_manager,
+        llm: LLM,
+        similarity_top_k: int = 5,
+        max_sub_queries: int = 6,
+    ):
+        self.index_manager = index_manager
+        self.llm = llm
+        self.similarity_top_k = similarity_top_k
+        self.max_sub_queries = max_sub_queries
+        self.preprocessor = QueryPreprocessor(llm)
+        self.decomposer = QueryDecomposer(llm)
+
+    # ── 预处理：降噪 + 难度/明确性分类（不再消指代）──────────────────
+    async def classify(self, clean_query: str):
+        """对 clean_query 做降噪 + 分类，返回 PreprocessResult（category/rewritten/reason）。"""
+        return await self.preprocessor.run(clean_query)
+
+    # ── 分支：单轮检索 + 流式合成 ────────────────────────────────────
+    async def retrieve(
+        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+    ) -> tuple[str, list]:
+        """直接检索 + 流式合成（绕开 agent/工具）。返回 (答案文本, source_nodes)。"""
+        ctx.write_event_to_stream(RetrievalStartEvent(query=query))
+        nodes = await self._retrieve_nodes(query, book_titles)
+        ctx.write_event_to_stream(RetrievalDoneEvent(count=len(nodes)))
+        if not nodes:
+            scope = f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
+            return f"在{scope}没有检索到与「{query}」相关的内容。", []
+        answer = await self._synthesize_stream(ctx, query, nodes)
+        return answer, nodes
+
+    # v1：声明角度逻辑后续补，先等同单轮检索
+    async def assume(
+        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+    ) -> tuple[str, list]:
+        return await self.retrieve(ctx, query, book_titles)
+
+    async def split(
+        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+    ) -> tuple[str, list]:
+        """定位 → 建骨架(结构主+内容辅) → 逐项检索 → map-reduce 汇总。
+
+        拆解失败/空 → 降级为单轮检索+合成（等同 retrieve），绝不阻塞。
+        """
+        ctx.write_event_to_stream(RetrievalStartEvent(query=query))
+
+        # 1) 定位：一轮宽召回，拿命中 chunk 的 chapter
+        located = await self._retrieve_nodes(query, book_titles)
+
+        # 2) 建骨架：章节子树标题（结构）+ 召回正文（内容）→ 子查询
+        all_chapters = self._book_chapters(book_titles)
+        hit_chapters = [(n.metadata or {}).get("chapter", "") for n in located]
+        prefix = dominant_prefix(hit_chapters)
+        headings = children(all_chapters, prefix)
+        passages = [
+            (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
+            for n in located
+        ]
+        sub_queries = await self.decomposer.run(
+            query, headings, passages, self.max_sub_queries
+        )
+
+        # 降级：拆不出子查询 → 整句单轮合成
+        if not sub_queries:
+            ctx.write_event_to_stream(RetrievalDoneEvent(count=len(located)))
+            if not located:
+                scope = (
+                    f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
+                )
+                return f"在{scope}没有检索到与「{query}」相关的内容。", []
+            answer = await self._synthesize_stream(ctx, query, located)
+            return answer, located
+
+        # 3) 逐项检索（先全检索，便于只发一次 RetrievalDone）
+        sections: list[tuple[str, list]] = []
+        all_nodes: list = []
+        for sq in sub_queries:
+            ns = await self._retrieve_nodes(sq, book_titles)
+            sections.append((sq, ns))
+            all_nodes.extend(ns)
+        ctx.write_event_to_stream(RetrievalDoneEvent(count=len(all_nodes)))
+
+        # 4) 汇总（map-reduce）：每子项各自合成一段，按骨架拼接
+        parts: list[str] = []
+        for sq, ns in sections:
+            heading = f"\n## {sq}\n"
+            ctx.write_event_to_stream(AnswerDeltaEvent(delta=heading))
+            body = (
+                await self._synthesize_stream(ctx, sq, ns)
+                if ns
+                else "（未检索到相关内容）"
+            )
+            parts.append(heading + body)
+        answer = "".join(parts).strip()
+        return answer, all_nodes
+
+    # ── helpers：章节 / 检索 / 流式合成 ──────────────────────────────
+    def _book_chapters(self, book_titles: Optional[list[str]]) -> list[str]:
+        """取单一选定书的去重 chapter 列表；未选或多选 → []（结构缺失，倒向内容主导）。"""
+        if not book_titles or len(book_titles) != 1:
+            return []
+        data = self.index_manager.chroma_collection.get(include=["metadatas"])
+        metas = data.get("metadatas") or []
+        return unique_chapters(metas, book_titles[0])
+
+    def _make_filters(self, book_titles: Optional[list[str]]):
+        """scope 硬约束转 metadata 过滤器；空范围返回 None（全库）。"""
+        if not book_titles:
+            return None
+        return MetadataFilters(filters=[
+            MetadataFilter(
+                key="book_title",
+                operator=FilterOperator.IN,
+                value=list(book_titles),
+            ),
+        ])
+
+    async def _retrieve_nodes(self, query: str, book_titles: Optional[list[str]]):
+        index = self.index_manager.get_index()
+        retriever = index.as_retriever(
+            similarity_top_k=self.similarity_top_k,
+            filters=self._make_filters(book_titles),
+        )
+        return await retriever.aretrieve(query)
+
+    async def _stream_tokens(self, query: str, nodes: list):
+        """流式合成的 token 源。单独成方法便于单测替身。"""
+        synthesizer = get_response_synthesizer(llm=self.llm, streaming=True)
+        resp = await synthesizer.asynthesize(query=query, nodes=nodes)
+        async for token in resp.async_response_gen():
+            yield token
+
+    async def _synthesize_stream(self, ctx: Context, query: str, nodes: list) -> str:
+        """逐 token 合成：每 token 推一个 AnswerDeltaEvent，最后拼成完整答案。"""
+        parts: list[str] = []
+        async for token in self._stream_tokens(query, nodes):
+            parts.append(token)
+            ctx.write_event_to_stream(AnswerDeltaEvent(delta=token))
+        return "".join(parts)

@@ -1,0 +1,179 @@
+"""QaCapability 单测：检索 + 流式合成 + 拆解-检索-汇总（split）。
+
+从 DocQueryWorkflow 抽出后，QA 的检索/合成实质逻辑在此独立测，不经 workflow
+step 机制。真实合成（LLM）/真实 chroma 不在范围，stub 掉检索 / token 源 / 拆解。
+"""
+from core.workflow.qa_capability import QaCapability
+
+
+# ── 替身 ─────────────────────────────────────────────────────────────
+class FakeLLM:
+    async def acomplete(self, prompt, **kw):  # 本文件不直接驱动 LLM
+        raise AssertionError("不应被调用")
+
+
+class FakeRetriever:
+    def __init__(self, nodes):
+        self._nodes = nodes
+
+    async def aretrieve(self, query):
+        return self._nodes
+
+
+class FakeIndex:
+    def __init__(self, nodes):
+        self._nodes = nodes
+        self.last_kw = None
+
+    def as_retriever(self, **kw):
+        self.last_kw = kw
+        return FakeRetriever(self._nodes)
+
+
+class FakeIndexManager:
+    def __init__(self, nodes):
+        self._index = FakeIndex(nodes)
+
+    def get_index(self):
+        return self._index
+
+
+class _FakeStore:
+    def __init__(self):
+        self._d = {}
+
+    async def get(self, k, default=None):
+        return self._d.get(k, default)
+
+    async def set(self, k, v):
+        self._d[k] = v
+
+
+class FakeCtx:
+    """实现 split / retrieve 用到的 write_event_to_stream + store。"""
+
+    def __init__(self):
+        self.events = []
+        self.store = _FakeStore()
+
+    def write_event_to_stream(self, ev):
+        self.events.append(ev)
+
+
+def _qa(index_manager=None):
+    return QaCapability(index_manager, FakeLLM(), similarity_top_k=3)
+
+
+# ── retrieve：检索 + 流式合成 ─────────────────────────────────────────
+async def test_retrieve_then_synthesizes_with_progress_events():
+    qa = _qa(FakeIndexManager(nodes=["n1", "n2"]))
+
+    async def fake_synth(ctx, query, nodes):
+        return "合成答案"
+
+    qa._synthesize_stream = fake_synth
+    ctx = FakeCtx()
+
+    text, nodes = await qa.retrieve(ctx, "B+树", None)
+    assert text == "合成答案"
+    assert nodes == ["n1", "n2"]
+    names = [e.__class__.__name__ for e in ctx.events]
+    assert "RetrievalStartEvent" in names
+    assert "RetrievalDoneEvent" in names
+
+
+async def test_retrieve_empty_nodes_returns_scope_hint():
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    text, nodes = await qa.retrieve(ctx, "不存在的内容", ["某本书"])
+    assert nodes == []
+    assert "某本书" in text
+
+
+async def test_synthesize_stream_emits_delta_per_token_and_joins():
+    qa = _qa(FakeIndexManager(nodes=["n1"]))
+
+    async def fake_tokens(query, nodes):
+        for t in ["合", "成", "答", "案"]:
+            yield t
+
+    qa._stream_tokens = fake_tokens
+    ctx = FakeCtx()
+
+    text = await qa._synthesize_stream(ctx, "B+树", ["n1"])
+    assert text == "合成答案"
+    deltas = [e.delta for e in ctx.events if e.__class__.__name__ == "AnswerDeltaEvent"]
+    assert deltas == ["合", "成", "答", "案"]
+
+
+# ── split：拆解 → 逐项检索 → map-reduce 汇总 ──────────────────────────
+def _split_qa():
+    """构造 qa 并 stub 掉外部依赖，聚焦 split 编排。"""
+    qa = _qa()
+    qa._book_chapters = lambda book_titles: ["3.2.1 工具A", "3.2.2 工具B"]
+
+    async def fake_retrieve_nodes(query, book_titles):
+        class N:
+            metadata = {"chapter": "3.2.1 工具A"}
+
+            def get_content(self):
+                return "正文"
+
+        return [N()]
+
+    qa._retrieve_nodes = fake_retrieve_nodes
+
+    async def fake_synth(ctx, query, nodes):
+        return f"[{query}的合成]"
+
+    qa._synthesize_stream = fake_synth
+    return qa
+
+
+async def test_split_decomposes_and_concatenates_sections():
+    qa = _split_qa()
+
+    async def fake_decompose(clean_query, headings, passages, max_items):
+        return ["工具A 是什么", "工具B 怎么用"]
+
+    qa.decomposer.run = fake_decompose
+    ctx = FakeCtx()
+
+    answer, nodes = await qa.split(ctx, "openclaw 的工具系统", ["openclaw"])
+
+    # 答案按子项分节拼接
+    assert "## 工具A 是什么" in answer
+    assert "## 工具B 怎么用" in answer
+    assert "[工具A 是什么的合成]" in answer
+
+
+async def test_split_emits_single_retrieval_done_and_section_headings():
+    qa = _split_qa()
+
+    async def fake_decompose(clean_query, headings, passages, max_items):
+        return ["子项1", "子项2"]
+
+    qa.decomposer.run = fake_decompose
+    ctx = FakeCtx()
+
+    await qa.split(ctx, "q", ["openclaw"])
+    names = [e.__class__.__name__ for e in ctx.events]
+    assert names.count("RetrievalDoneEvent") == 1          # 只发一次
+    headings = [e.delta for e in ctx.events if e.__class__.__name__ == "AnswerDeltaEvent"]
+    assert any("## 子项1" in h for h in headings)
+    assert any("## 子项2" in h for h in headings)
+
+
+async def test_split_falls_back_to_single_retrieve_when_no_subqueries():
+    qa = _split_qa()
+
+    async def empty_decompose(clean_query, headings, passages, max_items):
+        return []
+
+    qa.decomposer.run = empty_decompose
+    ctx = FakeCtx()
+
+    answer, nodes = await qa.split(ctx, "openclaw 工具系统", ["openclaw"])
+    # 降级：直接对整句合成
+    assert answer == "[openclaw 工具系统的合成]"
