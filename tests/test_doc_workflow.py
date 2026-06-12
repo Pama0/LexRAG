@@ -331,3 +331,29 @@ async def test_finalize_exposes_category_in_metadata():
     result = await wf.run(query="MySQL锁", memory=FakeMemory())
     assert result.metadata.get("category") == "retrievable"
     assert result.metadata.get("intent") == "qa"
+
+
+async def test_chitchat_responds_without_retrieval_or_classify():
+    # "你好" → intent=chitchat → 门口直接友好回应，不进 preprocess/检索
+    llm = FakeLLM(['{"intent": "chitchat", "clean_query": "你好"}'])  # 仅 Router 调 LLM
+    wf = _wf(llm)
+    called = {"retrieve": False, "classify": False}
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        called["retrieve"] = True
+        return "不应被调用", []
+
+    async def fake_classify(clean_query, book_titles=None, probe=True):
+        called["classify"] = True
+        from core.workflow.query_preprocess import PreprocessResult
+        return PreprocessResult("retrievable", clean_query)
+
+    wf.qa.retrieve = fake_retrieve
+    wf.qa.classify = fake_classify
+
+    result = await wf.run(query="你好", memory=FakeMemory())
+    assert called["retrieve"] is False
+    assert called["classify"] is False           # chitchat 门口拦截，不进 QA
+    assert "知识库助手" in str(result.response)
+    assert llm.calls == 1                         # 只有 Router 这一次
+

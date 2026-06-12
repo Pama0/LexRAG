@@ -113,3 +113,10 @@ async def test_run_rejects_invalid_intent():
     result = await _router(llm).run("帮我规划人生")
     assert result.intent == "qa"
     assert result.clean_query == "帮我规划人生"
+
+
+async def test_run_classifies_chitchat():
+    llm = FakeLLM(['{"intent": "chitchat", "clean_query": "你好"}'])
+    result = await _router(llm).run("你好")
+    assert result.intent == "chitchat"
+    assert result.clean_query == "你好"

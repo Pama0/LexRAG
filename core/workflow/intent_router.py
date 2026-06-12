@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_MSGS = 6
 
 # 意图 taxonomy v1：qa（RAG 问答）+ study_plan（占位，仅验证 dispatch 这条缝）
-Intent = Literal["qa", "study_plan"]
+Intent = Literal["qa", "study_plan", "chitchat"]
 
 # 用 {history} 把指代补全 + 规范化，再分类意图。用 .replace 注入，避免 prompt 内
 # JSON 示例的花括号被 str.format 误当占位符。
@@ -47,11 +47,12 @@ _ROUTER_PROMPT = """对话历史：
 第二步 意图分类（基于 clean_query）：
 - qa：针对已入库书籍/文档内容的具体问答（如"X是什么""X和Y的区别""第3章讲了什么"）。
 - study_plan：要求基于某本书/文档生成结构化学习计划或学习路线（如"给我做份学Redis的计划""按这本书排个学习路线"）。
-拿不准时默认 qa。
+- chitchat：寒暄、问候、致谢、闲聊，或与知识库内容无关的元问题（如"你好""谢谢""你是谁""你能做什么"）。这类不需要检索知识库。
+拿不准是否要检索时默认 qa；明显是寒暄/无关闲聊才判 chitchat。
 
-intent 仅取 [qa|study_plan]，clean_query 始终返回净化后的 query。
+intent 仅取 [qa|study_plan|chitchat]，clean_query 始终返回净化后的 query。
 结果只返回 JSON，不要其他任何内容：
-{"intent": "qa 或 study_plan", "clean_query": "净化后的 query"}
+{"intent": "qa / study_plan / chitchat", "clean_query": "净化后的 query"}
 
 query：{query}"""
 
@@ -72,7 +73,7 @@ class RouterDecision(BaseModel):
     非法值（如 life_plan）会在 model_validate 阶段被拒、走降级。
     """
 
-    intent: Literal["qa", "study_plan"]
+    intent: Literal["qa", "study_plan", "chitchat"]
     clean_query: str = Field(..., min_length=1, description="净化后的自包含 query")
 
 

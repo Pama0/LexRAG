@@ -57,6 +57,10 @@ class StudyPlanEvent(Event):
     """intent=study_plan → 占位分支（v1 仅验证 dispatch 缝，能力后续实现）。"""
 
 
+class ChitchatEvent(Event):
+    """intent=chitchat → 寒暄/闲聊，门口直接友好回应，不进检索。"""
+
+
 class PreprocessEvent(Event):
     """intent=qa → QA 内部预处理（降噪 + 难度分类）。纯信号；clean_query 从 ctx 取。"""
 
@@ -150,7 +154,7 @@ class DocQueryWorkflow(Workflow):
     @step
     async def route(
         self, ctx: Context, ev: RouteEvent
-    ) -> "PreprocessEvent | StudyPlanEvent":
+    ) -> "PreprocessEvent | StudyPlanEvent | ChitchatEvent":
         original = await ctx.store.get("original_query")
         memory: Optional[ChatMemoryBuffer] = await ctx.store.get("memory")
         book_titles = await ctx.store.get("book_titles")
@@ -164,6 +168,8 @@ class DocQueryWorkflow(Workflow):
 
         if result.intent == "study_plan":
             return StudyPlanEvent()
+        if result.intent == "chitchat":
+            return ChitchatEvent()
         return PreprocessEvent()  # qa（含降级）
 
     # ── QA 内部预处理：委托 QA capability 做降噪 + 难度分类，据 category dispatch。 ──
@@ -211,6 +217,14 @@ class DocQueryWorkflow(Workflow):
         # TODO: 接入 StudyPlan capability（拆解→排序→渲染，产 plan 产物落 DB）。
         return FinalizeEvent(
             answer="学习计划能力还在建设中，目前仅支持文档问答。", source_nodes=[]
+        )
+
+    @step
+    async def chitchat_branch(self, ctx: Context, ev: ChitchatEvent) -> FinalizeEvent:
+        # 寒暄/闲聊：门口直接友好回应，不进 probe/检索（避免把"你好"当知识库查询）。
+        return FinalizeEvent(
+            answer="你好！我是文档知识库助手，可以问我已入库书籍/文档里的内容～",
+            source_nodes=[],
         )
 
     @step
