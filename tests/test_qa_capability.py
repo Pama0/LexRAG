@@ -177,3 +177,87 @@ async def test_split_falls_back_to_single_retrieve_when_no_subqueries():
     answer, nodes = await qa.split(ctx, "openclaw 工具系统", ["openclaw"])
     # 降级：直接对整句合成
     assert answer == "[openclaw 工具系统的合成]"
+
+
+# ── assume：归纳维度 → 声明角度 → 逐维度检索分节 ──────────────────────
+from core.workflow.query_dimension import Dimension  # noqa: E402
+
+
+def _assume_qa():
+    """构造 qa 并 stub 掉外部依赖，聚焦 assume 编排。"""
+    qa = _qa()
+
+    async def fake_retrieve_nodes(query, book_titles):
+        class N:
+            metadata = {"chapter": ""}
+
+            def get_content(self):
+                return "正文"
+
+        return [N()]
+
+    qa._retrieve_nodes = fake_retrieve_nodes
+
+    async def fake_synth(ctx, query, nodes):
+        return f"[{query}的合成]"
+
+    qa._synthesize_stream = fake_synth
+    return qa
+
+
+async def test_assume_declares_angles_and_sections_per_dimension():
+    qa = _assume_qa()
+
+    async def fake_dims(clean_query, passages, max_items):
+        return [
+            Dimension(label="读写性能", query="Redis 缓存读写性能"),
+            Dimension(label="一致性", query="Redis 缓存数据一致性"),
+        ]
+
+    qa.dimensioner.run = fake_dims
+    ctx = FakeCtx()
+
+    answer, nodes = await qa.assume(ctx, "Redis 做缓存好吗", ["Redis"])
+
+    # 角度声明（preamble）
+    assert "可以从以下角度来看" in answer
+    assert "读写性能" in answer and "一致性" in answer
+    # 按维度分节，合成用的是维度的子查询
+    assert "## 读写性能" in answer
+    assert "## 一致性" in answer
+    assert "[Redis 缓存读写性能的合成]" in answer
+
+
+async def test_assume_emits_single_retrieval_done_and_declares_before_sections():
+    qa = _assume_qa()
+
+    async def fake_dims(clean_query, passages, max_items):
+        return [Dimension(label="角度A", query="qa"), Dimension(label="角度B", query="qb")]
+
+    qa.dimensioner.run = fake_dims
+    ctx = FakeCtx()
+
+    await qa.assume(ctx, "q", ["书"])
+    names = [e.__class__.__name__ for e in ctx.events]
+    assert names.count("RetrievalDoneEvent") == 1          # 只发一次
+    deltas = [e.delta for e in ctx.events if e.__class__.__name__ == "AnswerDeltaEvent"]
+    # 声明 delta 在所有分节标题 delta 之前
+    decl_idx = next(i for i, d in enumerate(deltas) if "可以从以下角度来看" in d)
+    sec_idx = next(i for i, d in enumerate(deltas) if "## 角度A" in d)
+    assert decl_idx < sec_idx
+
+
+async def test_assume_falls_back_to_single_retrieve_when_no_dimensions():
+    qa = _assume_qa()
+
+    async def empty_dims(clean_query, passages, max_items):
+        return []
+
+    qa.dimensioner.run = empty_dims
+    ctx = FakeCtx()
+
+    answer, nodes = await qa.assume(ctx, "Redis 做缓存好吗", ["书"])
+    # 降级：对整句直接合成，无角度声明、无分节标题
+    assert answer == "[Redis 做缓存好吗的合成]"
+    assert "可以从以下角度来看" not in answer
+    assert "##" not in answer

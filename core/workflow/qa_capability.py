@@ -31,6 +31,7 @@ from llama_index.core.workflow import Context, Event
 
 from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
 from core.workflow.query_decompose import QueryDecomposer
+from core.workflow.query_dimension import DimensionExtractor
 from core.workflow.query_preprocess import QueryPreprocessor
 
 
@@ -69,6 +70,7 @@ class QaCapability:
         self.max_sub_queries = max_sub_queries
         self.preprocessor = QueryPreprocessor(llm)
         self.decomposer = QueryDecomposer(llm)
+        self.dimensioner = DimensionExtractor(llm)
 
     # ── 预处理：降噪 + 难度/明确性分类（不再消指代）──────────────────
     async def classify(self, clean_query: str):
@@ -89,11 +91,43 @@ class QaCapability:
         answer = await self._synthesize_stream(ctx, query, nodes)
         return answer, nodes
 
-    # v1：声明角度逻辑后续补，先等同单轮检索
     async def assume(
         self, ctx: Context, query: str, book_titles: Optional[list[str]]
     ) -> tuple[str, list]:
-        return await self.retrieve(ctx, query, book_titles)
+        """角度不定：定位 → LLM 归纳评判维度 → 声明所选角度 → 逐维度检索分节合成。
+
+        归纳不出维度 → 降级为单轮合成（复用已定位结果，绝不阻塞）。
+        """
+        ctx.write_event_to_stream(RetrievalStartEvent(query=query))
+
+        # 1) 定位：一轮宽召回，拿正文供归纳维度
+        located = await self._retrieve_nodes(query, book_titles)
+        passages = [
+            (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
+            for n in located
+        ]
+
+        # 2) 归纳维度：从「问题 + 召回正文」产 (label, query) 维度对
+        dimensions = await self.dimensioner.run(query, passages, self.max_sub_queries)
+
+        # 降级：归纳不出维度 → 整句单轮合成
+        if not dimensions:
+            ctx.write_event_to_stream(RetrievalDoneEvent(count=len(located)))
+            if not located:
+                scope = (
+                    f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
+                )
+                return f"在{scope}没有检索到与「{query}」相关的内容。", []
+            answer = await self._synthesize_stream(ctx, query, located)
+            return answer, located
+
+        # 3) 声明所选角度（透明 + 可纠偏）
+        labels = "、".join(d.label for d in dimensions)
+        preamble = f"「{query}」可以从以下角度来看：{labels}。下面分别说明——\n"
+
+        # 4) 逐维度检索 + 分节合成（与 split 共用 helper）
+        sections = [(d.label, d.query) for d in dimensions]
+        return await self._retrieve_and_reduce(ctx, sections, book_titles, preamble)
 
     async def split(
         self, ctx: Context, query: str, book_titles: Optional[list[str]]
