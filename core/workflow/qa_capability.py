@@ -18,6 +18,7 @@
 流式：检索/合成进度通过 `ctx.write_event_to_stream` 推【流式专用事件】（本模块定义，
 `doc_workflow` re-export、api 层映射成前端 SSE）。这些事件不参与 workflow step 图。
 """
+import logging
 from typing import Optional
 
 from llama_index.core import get_response_synthesizer
@@ -33,6 +34,8 @@ from core.workflow.chapter_tree import children, dominant_prefix, unique_chapter
 from core.workflow.query_decompose import QueryDecomposer
 from core.workflow.query_dimension import DimensionExtractor
 from core.workflow.query_preprocess import QueryPreprocessor
+
+logger = logging.getLogger(__name__)
 
 
 # ── 流式专用事件（仅 write_event_to_stream，不参与 step 图）──────────
@@ -92,6 +95,7 @@ class QaCapability:
         """
         ctx.write_event_to_stream(RetrievalStartEvent(query=query))
         nodes = await self._retrieve_nodes(query, book_titles)
+        logger.info("retrieve: 命中 %d 段 scope=%s", len(nodes), book_titles)
         ctx.write_event_to_stream(RetrievalDoneEvent(count=len(nodes)))
         if not nodes:
             scope = f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
@@ -122,6 +126,7 @@ class QaCapability:
 
         # 降级：归纳不出维度 → 整句单轮合成
         if not dimensions:
+            logger.info("assume: 无维度，降级单轮检索")
             ctx.write_event_to_stream(RetrievalDoneEvent(count=len(located)))
             if not located:
                 scope = (
@@ -166,6 +171,7 @@ class QaCapability:
 
         # 降级：拆不出子查询 → 整句单轮合成
         if not sub_queries:
+            logger.info("split: 无子查询，降级单轮检索")
             ctx.write_event_to_stream(RetrievalDoneEvent(count=len(located)))
             if not located:
                 scope = (

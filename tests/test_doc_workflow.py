@@ -241,7 +241,7 @@ async def test_other_dispatches_to_bounded_agent():
     assert result.source_nodes == ["n1", "n2"]
 
 
-async def test_other_falls_back_to_single_retrieve_when_agent_raises():
+async def test_other_falls_back_to_single_retrieve_when_agent_raises(caplog):
     llm = FakeLLM([
         '{"intent": "qa", "clean_query": "设计题"}',
         '{"category": "other", "rewritten_query": "设计题", "reason": "开放设计"}',
@@ -258,6 +258,9 @@ async def test_other_falls_back_to_single_retrieve_when_agent_raises():
 
     wf.qa.retrieve = fake_retrieve
 
-    result = await wf.run(query="设计题", memory=FakeMemory())
+    import logging
+    with caplog.at_level(logging.WARNING):
+        result = await wf.run(query="设计题", memory=FakeMemory())
     assert str(result.response) == "降级单轮答案"   # agent 抛错 → 降级 qa.retrieve
     assert result.source_nodes == ["n1"]
+    assert any("other agent 失败" in r.getMessage() for r in caplog.records)  # 降级显形
