@@ -58,12 +58,20 @@ class QaAgent:
         self.max_iterations = max_iterations
         self._run_scope: Optional[list[str]] = None
         self._run_sources: list = []
-        self.agent = FunctionAgent(
-            tools=self._make_tools(),
-            llm=llm,
-            system_prompt=QA_AGENT_SYSTEM_PROMPT,
-            early_stopping_method="generate",
-        )
+        # 懒构造：FunctionAgent 需合法 LLM 且较重，只在真走 other 分支时才建。
+        # 这样 DocQueryWorkflow 每请求构造（含单测替身 LLM）不被 FunctionAgent 校验拖累，
+        # 多数不走 other 的请求也省下构造开销。
+        self.agent = None
+
+    def _ensure_agent(self) -> FunctionAgent:
+        if self.agent is None:
+            self.agent = FunctionAgent(
+                tools=self._make_tools(),
+                llm=self.llm,
+                system_prompt=QA_AGENT_SYSTEM_PROMPT,
+                early_stopping_method="generate",
+            )
+        return self.agent
 
     def _make_filters(self, book_titles: Optional[list[str]]):
         if not book_titles:
@@ -148,7 +156,9 @@ class QaAgent:
         self._run_scope = book_titles
         self._run_sources = []
 
-        handler = self.agent.run(user_msg=query, max_iterations=self.max_iterations)
+        handler = self._ensure_agent().run(
+            user_msg=query, max_iterations=self.max_iterations
+        )
         async for ev in handler.stream_events():
             name = ev.__class__.__name__
             if name == "ToolCall":

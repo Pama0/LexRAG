@@ -216,3 +216,48 @@ async def test_missing_info_budget_exhausted_assumes_and_answers():
     assert "按最可能的解读作答" in captured["preamble"]   # 声明假设
     assert "尽力答" in str(result.response)
     assert result.source_nodes == ["n1"]                   # 确实检索了（未反问）
+
+
+async def test_other_dispatches_to_bounded_agent():
+    llm = FakeLLM([
+        '{"intent": "qa", "clean_query": "对比 openclaw 的两种架构取舍"}',
+        '{"category": "other", "rewritten_query": "对比 openclaw 的两种架构取舍", "reason": "开放权衡"}',
+    ])
+    wf = _wf(llm)
+
+    captured = {}
+
+    async def fake_agent_run(ctx, query, book_titles):
+        captured["query"] = query
+        captured["book_titles"] = book_titles
+        return "agent 综合答案", ["n1", "n2"]
+
+    wf.qa_agent.run = fake_agent_run
+
+    result = await wf.run(query="对比 openclaw 的两种架构取舍", memory=FakeMemory(), book_titles=["openclaw"])
+    assert captured["query"] == "对比 openclaw 的两种架构取舍"
+    assert captured["book_titles"] == ["openclaw"]
+    assert str(result.response) == "agent 综合答案"
+    assert result.source_nodes == ["n1", "n2"]
+
+
+async def test_other_falls_back_to_single_retrieve_when_agent_raises():
+    llm = FakeLLM([
+        '{"intent": "qa", "clean_query": "设计题"}',
+        '{"category": "other", "rewritten_query": "设计题", "reason": "开放设计"}',
+    ])
+    wf = _wf(llm)
+
+    async def boom(ctx, query, book_titles):
+        raise RuntimeError("agent 失败")
+
+    wf.qa_agent.run = boom
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        return "降级单轮答案", ["n1"]
+
+    wf.qa.retrieve = fake_retrieve
+
+    result = await wf.run(query="设计题", memory=FakeMemory())
+    assert str(result.response) == "降级单轮答案"   # agent 抛错 → 降级 qa.retrieve
+    assert result.source_nodes == ["n1"]
