@@ -4,6 +4,7 @@
 step 机制。真实合成（LLM）/真实 chroma 不在范围，stub 掉检索 / token 源 / 拆解。
 """
 from core.workflow.qa_capability import QaCapability
+from core.workflow.query_dimension import Dimension
 
 
 # ── 替身 ─────────────────────────────────────────────────────────────
@@ -180,7 +181,6 @@ async def test_split_falls_back_to_single_retrieve_when_no_subqueries():
 
 
 # ── assume：归纳维度 → 声明角度 → 逐维度检索分节 ──────────────────────
-from core.workflow.query_dimension import Dimension  # noqa: E402
 
 
 def _assume_qa():
@@ -261,3 +261,23 @@ async def test_assume_falls_back_to_single_retrieve_when_no_dimensions():
     assert answer == "[Redis 做缓存好吗的合成]"
     assert "可以从以下角度来看" not in answer
     assert "##" not in answer
+
+
+async def test_assume_empty_located_and_no_dimensions_returns_scope_hint():
+    qa = _qa()
+
+    async def empty_retrieve_nodes(query, book_titles):
+        return []
+
+    qa._retrieve_nodes = empty_retrieve_nodes
+
+    async def empty_dims(clean_query, passages, max_items):
+        return []
+
+    qa.dimensioner.run = empty_dims
+    ctx = FakeCtx()
+
+    answer, nodes = await qa.assume(ctx, "不存在的内容", ["某本书"])
+    assert nodes == []
+    assert "某本书" in answer
+    assert "没有检索到" in answer

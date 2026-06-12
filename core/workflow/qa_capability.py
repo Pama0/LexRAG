@@ -13,7 +13,7 @@
 - `classify(clean_query)` → 预处理结果（category / rewritten_query / reason）。
 - `retrieve(ctx, query, book_titles)` → 单轮检索 + 流式合成。
 - `split(ctx, query, book_titles)` → 拆解-检索-map-reduce 汇总（失败降级单轮）。
-- `assume` == `retrieve`（v1；声明角度逻辑后续补）。
+- `assume(ctx, query, book_titles)` → 角度不定：归纳评判维度 → 声明所选角度 → 逐维度检索分节（失败降级单轮）。
 
 流式：检索/合成进度通过 `ctx.write_event_to_stream` 推【流式专用事件】（本模块定义，
 `doc_workflow` re-export、api 层映射成前端 SSE）。这些事件不参与 workflow step 图。
