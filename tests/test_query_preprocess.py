@@ -87,3 +87,19 @@ async def test_run_takes_only_clean_query():
 
     params = list(inspect.signature(QueryPreprocessor.run).parameters)
     assert params == ["self", "clean_query"]
+
+
+async def test_run_missing_info_carries_clarify_question():
+    llm = FakeLLM([
+        '{"category": "missing_info", "rewritten_query": "这个索引的应用场景", "reason": "指代不明", "clarify_question": "你说的「这个索引」指哪一个？B+树索引还是全文索引？"}'
+    ])
+    result = await _pp(llm).run("这个索引的应用场景")
+    assert result.category == "missing_info"
+    assert result.clarify_question == "你说的「这个索引」指哪一个？B+树索引还是全文索引？"
+
+
+async def test_run_clarify_question_defaults_empty_when_absent():
+    # 非 missing_info / LLM 未给 → clarify_question 默认空
+    llm = FakeLLM(['{"category": "retrievable", "rewritten_query": "MySQL锁"}'])
+    result = await _pp(llm).run("MySQL锁")
+    assert result.clarify_question == ""
