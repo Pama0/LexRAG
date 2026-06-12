@@ -88,6 +88,16 @@ class ClarifyEvent(Event):
     clarify_question: str = ""
 
 
+class OtherEvent(Event):
+    """other → 高难度/开放问题分支。
+
+    第二步将换为「有界 agent（自由调用工具 + 成本/次数边界 + 超界降级）」；
+    v1 先从 fallback 独立出来、暂走单轮检索。
+    """
+
+    rewritten_query: str
+
+
 class FinalizeEvent(Event):
     """各分支汇流到此，统一收尾 + 写会话记忆。"""
 
@@ -146,7 +156,7 @@ class DocQueryWorkflow(Workflow):
     @step
     async def preprocess(
         self, ctx: Context, ev: PreprocessEvent
-    ) -> "RetrieveAgentEvent | SplitEvent | AssumeEvent | ClarifyEvent":
+    ) -> "RetrieveAgentEvent | SplitEvent | AssumeEvent | ClarifyEvent | OtherEvent":
         clean_query = await ctx.store.get("clean_query")
 
         result = await self.qa.classify(clean_query)
@@ -175,7 +185,9 @@ class DocQueryWorkflow(Workflow):
                 return RetrieveAgentEvent(
                     rewritten_query=rewritten, assumption_note=note
                 )
-            case _:  # retrievable / other / 解析失败 fallback
+            case "other":
+                return OtherEvent(rewritten_query=rewritten)
+            case _:  # retrievable / 解析失败 fallback
                 return RetrieveAgentEvent(rewritten_query=rewritten)
 
     # ── 分支：dispatch 到 QA capability（薄委托），各分支统一收成 FinalizeEvent ──
@@ -192,6 +204,16 @@ class DocQueryWorkflow(Workflow):
         answer, nodes = await self.qa.retrieve(
             ctx, ev.rewritten_query, book_titles, ev.assumption_note
         )
+        return FinalizeEvent(answer=answer, source_nodes=nodes)
+
+    @step
+    async def other_branch(self, ctx: Context, ev: OtherEvent) -> FinalizeEvent:
+        # TODO(step2): 换为有界 agent（自由调用工具 + max_steps/timeout/超界降级 +
+        # grounding 约束 + 流式适配）。见 ARCHITECTURE.md「按可预测性配控制结构」。
+        # v1：先把 other 从 fallback 独立出来、补「定义说检索不了却走单轮检索」的裂缝；
+        # 行为暂与单轮检索同构，待第二步替换。
+        book_titles = await ctx.store.get("book_titles")
+        answer, nodes = await self.qa.retrieve(ctx, ev.rewritten_query, book_titles)
         return FinalizeEvent(answer=answer, source_nodes=nodes)
 
     @step

@@ -172,6 +172,28 @@ async def test_missing_info_uses_natural_clarify_question():
     assert "你说的「这个索引」指哪一个" in str(result.response)
 
 
+async def test_other_category_answers_via_dedicated_branch():
+    # other 不再与 retrievable/解析失败混走 fallback，而是独立分支（v1 暂仍单轮检索）
+    llm = FakeLLM([
+        '{"intent": "qa", "clean_query": "设计一个支持千万级并发的发号器"}',
+        '{"category": "other", "rewritten_query": "设计一个支持千万级并发的发号器", "reason": "开放设计题"}',
+    ])
+    wf = _wf(llm)
+
+    captured = {}
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        captured["query"] = query
+        return "复杂问题答案", ["n1"]
+
+    wf.qa.retrieve = fake_retrieve
+
+    result = await wf.run(query="设计一个支持千万级并发的发号器", memory=FakeMemory())
+    assert captured["query"] == "设计一个支持千万级并发的发号器"
+    assert str(result.response) == "复杂问题答案"
+    assert result.source_nodes == ["n1"]
+
+
 async def test_missing_info_budget_exhausted_assumes_and_answers():
     llm = FakeLLM([
         '{"intent": "qa", "clean_query": "这个索引的应用场景"}',
