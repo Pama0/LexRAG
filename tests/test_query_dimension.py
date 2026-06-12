@@ -54,9 +54,12 @@ async def test_run_drops_items_with_blank_label_or_query():
     assert [(d.label, d.query) for d in dims] == [("有效", "有效检索")]
 
 
-async def test_run_returns_empty_on_parse_failure():
-    dims = await _ext(FakeLLM(["这不是JSON"])).run("q", ["p"])
+async def test_run_returns_empty_on_parse_failure(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        dims = await _ext(FakeLLM(["这不是JSON"])).run("q", ["p"])
     assert dims == []
+    assert any("dimension 归纳失败" in r.getMessage() for r in caplog.records)  # 降级显形
 
 
 async def test_run_returns_empty_on_empty_content():

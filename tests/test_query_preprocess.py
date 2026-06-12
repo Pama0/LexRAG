@@ -59,11 +59,14 @@ async def test_run_classifies_missing_info():
     assert result.reason == "指代不明"
 
 
-async def test_run_falls_back_to_retrievable_on_parse_failure():
+async def test_run_falls_back_to_retrievable_on_parse_failure(caplog):
+    import logging
     llm = FakeLLM(["这不是JSON"])
-    result = await _pp(llm).run("讲讲数据库")
+    with caplog.at_level(logging.WARNING):
+        result = await _pp(llm).run("讲讲数据库")
     assert result.category == "retrievable"   # 解析失败 → 可检索，不阻塞
     assert result.rewritten_query == "讲讲数据库"
+    assert any("preprocess 解析失败" in r.getMessage() for r in caplog.records)  # 降级显形
 
 
 async def test_run_rejects_invalid_category():

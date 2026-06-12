@@ -11,12 +11,15 @@
 不持有 memory，不碰 ctx，不做 dispatch——dispatch 是 workflow 编排层的事。
 解析失败一律降级为 intent=qa + clean_query=原 query，绝不阻塞。
 """
+import logging
 from dataclasses import dataclass
 from typing import Literal, Optional
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.llms import LLM
 from llama_index.core.memory import ChatMemoryBuffer
+
+logger = logging.getLogger(__name__)
 
 # 门口消指代只取最近几轮历史，别灌全量（省 token，也避免远古上下文误导）
 MAX_HISTORY_MSGS = 6
@@ -131,7 +134,9 @@ class IntentRouter:
             # schema 校验交给 Pydantic（json_object 不保 schema，这步才是约束）
             decision = RouterDecision.model_validate_json(text)
             clean = (decision.clean_query or original).strip() or original
+            logger.info("router: intent=%s clean_query=%r", decision.intent, clean[:80])
             return RouterResult(decision.intent, clean)
-        except Exception:
+        except Exception as exc:
             # 任何失败（空返回 / 非法 JSON / schema 不符 / 网络）都降级为 qa + 原 query，绝不阻塞
+            logger.warning("router 解析失败，降级 intent=qa + 原 query：%s", exc)
             return RouterResult("qa", original)

@@ -6,10 +6,13 @@
 
 解析失败 / 空 -> 返回空列表，由调用方（split_branch）降级为单轮检索，绝不阻塞。
 """
+import logging
 from typing import List
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.llms import LLM
+
+logger = logging.getLogger(__name__)
 
 # 用 .replace 注入，避免 prompt 内 JSON 示例花括号被 str.format 误当占位符。
 _DECOMPOSE_PROMPT = """你是检索 query 拆解器。下面给出一个较宽的问题，以及与它相关的
@@ -77,7 +80,9 @@ class QueryDecomposer:
                 raise ValueError("empty content")
             data = Decomposition.model_validate_json(text)
             subs = [s.strip() for s in data.sub_queries if s and s.strip()]
+            logger.info("decompose: 拆出 %d 个子查询", len(subs[:max_items]))
             return subs[:max_items]
-        except Exception:
+        except Exception as exc:
             # 任何失败都返回空，交由 split_branch 降级为单轮检索，绝不阻塞
+            logger.warning("decompose 失败，返回空（split 将降级单轮）：%s", exc)
             return []

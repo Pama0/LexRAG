@@ -48,9 +48,12 @@ async def test_run_drops_blank_sub_queries():
     assert subs == ["有效"]
 
 
-async def test_run_returns_empty_on_parse_failure():
-    subs = await _dec(FakeLLM(["这不是JSON"])).run("q", [], ["p"])
+async def test_run_returns_empty_on_parse_failure(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        subs = await _dec(FakeLLM(["这不是JSON"])).run("q", [], ["p"])
     assert subs == []
+    assert any("decompose 失败" in r.getMessage() for r in caplog.records)  # 降级显形
 
 
 async def test_run_returns_empty_on_empty_content():

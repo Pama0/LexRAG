@@ -6,10 +6,13 @@
 
 解析失败 / 空 -> 返回空列表，由调用方（assume）降级为单轮检索，绝不阻塞。
 """
+import logging
 from typing import List
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.llms import LLM
+
+logger = logging.getLogger(__name__)
 
 # 用 .replace 注入，避免 prompt 内 JSON 示例花括号被 str.format 误当占位符。
 _DIMENSION_PROMPT = """你是检索角度归纳器。下面给出一个"主题已具体、但回答角度/评判维度不定"的问题，以及与它相关的【召回正文片段】。请【只依据给定素材】归纳出若干个并列的评判维度，便于分角度回答。
@@ -80,7 +83,9 @@ class DimensionExtractor:
                 for d in data.dimensions
                 if d.label and d.label.strip() and d.query and d.query.strip()
             ]
+            logger.info("dimension: 归纳 %d 个维度", len(dims[:max_items]))
             return dims[:max_items]
-        except Exception:
+        except Exception as exc:
             # 任何失败都返回空，交由 assume 降级为单轮检索，绝不阻塞
+            logger.warning("dimension 归纳失败，返回空（assume 将降级单轮）：%s", exc)
             return []

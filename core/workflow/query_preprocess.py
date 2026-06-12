@@ -10,11 +10,14 @@
 不持有 memory，不碰 ctx，不做路由——这些是 workflow 编排层的事。
 解析失败一律降级为可检索（retrievable）用原 query，绝不阻塞。
 """
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.llms import LLM
+
+logger = logging.getLogger(__name__)
 
 # 两步 JUDGE：clean_query 已自包含 + 规范，这里只做降噪 + 难度分类。
 # 用 .replace 注入，避免 prompt 内 JSON 示例的花括号被 str.format 误当占位符。
@@ -122,9 +125,12 @@ class QueryPreprocessor:
             # schema 校验交给 Pydantic（json_object 不保 schema，这步才是约束）
             judgment = QueryJudgment.model_validate_json(text)
             rewritten = (judgment.rewritten_query or clean_query).strip() or clean_query
-            return PreprocessResult(
+            result = PreprocessResult(
                 judgment.category, rewritten, judgment.reason, judgment.clarify_question
             )
-        except Exception:
+            logger.info("preprocess: category=%s reason=%s", result.category, result.reason)
+            return result
+        except Exception as exc:
             # 任何失败（空返回 / 非法 JSON / schema 不符 / 网络）都降级为可检索，绝不阻塞
+            logger.warning("preprocess 解析失败，降级 retrievable：%s", exc)
             return PreprocessResult("retrievable", clean_query, "")

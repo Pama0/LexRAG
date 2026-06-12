@@ -90,11 +90,14 @@ async def test_run_resolves_book_reference_returns_clean_query():
     assert result.clean_query == "《openclaw》讲了什么"
 
 
-async def test_run_falls_back_to_qa_on_parse_failure():
+async def test_run_falls_back_to_qa_on_parse_failure(caplog):
+    import logging
     llm = FakeLLM(["这不是JSON"])
-    result = await _router(llm).run("讲讲数据库")
+    with caplog.at_level(logging.WARNING):
+        result = await _router(llm).run("讲讲数据库")
     assert result.intent == "qa"        # 解析失败 → 默认 qa，不阻塞
     assert result.clean_query == "讲讲数据库"   # 用原 query
+    assert any("router 解析失败" in r.getMessage() for r in caplog.records)  # 降级显形
 
 
 async def test_run_falls_back_on_empty_content():
