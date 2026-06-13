@@ -44,6 +44,42 @@ def filter_by_book(documents: list[str], metadatas: list[dict],
     return docs, metas
 
 
+# B: prompt 末尾追加的中文输出约束
+_CHINESE_CONSTRAINT = (
+    "\n\n【输出语言】你必须用中文生成问题。"
+    "专有名词（如MySQL、InnoDB、B+树）保留英文，但整个句子必须是中文。"
+    "用户是中文读者，所有 query 必须用中文表达。"
+)
+
+
+def _force_chinese_output(synthesizer) -> None:
+    """在 synthesizer 所有 prompt 模板末尾追加中文输出约束。
+
+    优先走 ragas 标准接口 get_prompts/set_prompts；
+    回退遍历实例属性中的长字符串（prompt 模板识别），防重复追加。
+    """
+    # 标准接口
+    if hasattr(synthesizer, "get_prompts") and hasattr(synthesizer, "set_prompts"):
+        prompts = synthesizer.get_prompts()
+        modified = {}
+        for key, value in prompts.items():
+            if isinstance(value, str) and _CHINESE_CONSTRAINT not in value:
+                modified[key] = value + _CHINESE_CONSTRAINT
+            else:
+                modified[key] = value
+        synthesizer.set_prompts(**modified)
+        return
+    # 回退：遍历实例属性
+    for attr, val in list(synthesizer.__dict__.items()):
+        if attr.startswith("_"):
+            continue
+        if isinstance(val, str) and len(val) > 50 and _CHINESE_CONSTRAINT not in val:
+            try:
+                setattr(synthesizer, attr, val + _CHINESE_CONSTRAINT)
+            except AttributeError:
+                pass
+
+
 def chunks_to_langchain(documents: list[str], metadatas: list[dict]) -> list[LCDocument]:
     """把 chroma 的 (正文, 元数据) 逐条包成 LangChain Document，跳过空文本。"""
     out: list[LCDocument] = []
@@ -100,10 +136,16 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42,
     gen_llm = make_eval_llm()
     gen_emb = make_eval_embeddings()
 
+    # A: Persona 强约束中文输出
     personas = [
         Persona(
-            name="tech_reader",
-            role_description="正在阅读技术书的工程师，针对书中具体的技术概念、机制、章节提出有据可查的问题",
+            name="chinese_tech_reader",
+            role_description=(
+                "正在阅读中文技术书籍的中国工程师。"
+                "你提出的所有问题都必须使用中文。"
+                "问题中出现的专有名词（如MySQL、InnoDB、B+树、Buffer Pool）保留原文，但整个句子必须是中文。"
+                "针对书中具体的技术概念、机制、章节提出有据可查的问题。"
+            ),
         ),
     ]
 
@@ -113,10 +155,11 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42,
         (SingleHopSpecificQuerySynthesizer(llm=gen_llm), 0.6),
         (MultiHopSpecificQuerySynthesizer(llm=gen_llm), 0.4),
     ]
-    # 中文 prompt 适配
+    # 中文 prompt 适配 + B: prompt 末尾追加输出语言约束
     for query, _ in distribution:
         prompts = await query.adapt_prompts("chinese", llm=gen_llm)
         query.set_prompts(**prompts)
+        _force_chinese_output(query)
 
     print(f"开始生成测试集（{size} 条）……")
     dataset = generator.generate_with_chunks(
@@ -136,7 +179,7 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42,
 
 def main():
     parser = argparse.ArgumentParser(description="生成 book RAG 测试集草稿")
-    parser.add_argument("--size", type=int, default=5, help="测试集条数")
+    parser.add_argument("--size", type=int, default=50, help="测试集条数")
     parser.add_argument("--max-chunks", type=int, default=60,
                         help="喂入 ragas 的 chunk 上限（建图成本随此线性增长）；传 0 表示全量")
     parser.add_argument("--seed", type=int, default=42, help="抽样随机种子")
