@@ -1,43 +1,29 @@
-# core/workflow/ —— Agent workflow 包
+# core/workflow/ —— 文档问答 workflow 包
 
-本包用于放置自定义 RAG workflow（LlamaIndex `Workflow`），再封装为 Agent 工具。
-当前 book 业务的 `book_search` 走 `core/tools/book_tools.py` 内联检索；
-如需更复杂的多步检索流程，按以下约定新增：
+当前 book 问答走 **`DocQueryWorkflow`**（顶层编排）+ **`QaCapability`**（QA 检索/合成实质），
+由 **`DocQueryService`** 在装配层组装，`api/main.py` 与根 `main.py` 各自注入。
 
-## 新增一个 workflow 并封装为 tool
+> 历史：早期 `book_rag.py`（`BookRagWorkflow`）+ `core/tools/book_tools.py` 已退役并删除，
+> 逻辑被本包的 `doc_workflow` / `qa_capability` 取代。
 
-1. 在本目录写 `book_rag.py`：
+## 结构
 
-   ```python
-   from llama_index.core.workflow import Workflow, step, StartEvent, StopEvent
+```
+DocQueryService (doc_query_service.py)   装配 + 每请求新建 workflow
+   └─ DocQueryWorkflow (doc_workflow.py) 顶层编排：门口 Router → QA 分支 → finalize
+        ├─ IntentRouter (intent_router.py)      Layer1：净化 + 意图分类
+        └─ QaCapability (qa_capability.py)       Layer2：probe→判 category→检索/拆解/归纳
+             ├─ QueryPreprocessor (query_preprocess.py)  降噪 + 难度分类
+             ├─ QueryDecomposer  (query_decompose.py)    pending_split 拆解
+             └─ DimensionExtractor (query_dimension.py)  ambiguous 归纳维度
+```
 
-   class BookRagWorkflow(Workflow):
-       def __init__(self, index_manager, llm, **kw):
-           super().__init__(**kw)
-           self.index_manager = index_manager
-           self.llm = llm
-       @step
-       async def run_step(self, ev: StartEvent) -> StopEvent:
-           ...  # 自定义检索 + 合成，返回带 source_nodes 的 Response
-   ```
+## 新增一个分支/能力
 
-2. 在 `core/tools/book_tools.py` 加工厂：
+1. 在 `qa_capability.py` 加分支方法（参考现有 `retrieve` / `split` / `assume`），
+   通过 `ctx.write_event_to_stream` 推流式事件。
+2. 在 `query_preprocess.py` 的 category 体系里挂上对应类别（如需新类别）。
+3. 在 `doc_workflow.py` 的路由处把新 category dispatch 到该分支。
+4. 决策开关（供评测 ablation）走 `DocQueryWorkflow` 的 flag 参数。
 
-   ```python
-   from core.agent.source_context import add_sources, node_to_source_ref
-   from core.workflow.book_rag import BookRagWorkflow
-
-   def create_book_rag_tool(index_manager, llm) -> FunctionTool:
-       workflow = BookRagWorkflow(index_manager=index_manager, llm=llm)
-       async def book_rag_search(query: str, book_title: str | None = None) -> str:
-           result = await workflow.run(query=query, book_title=book_title)
-           add_sources([node_to_source_ref(n) for n in result.source_nodes])
-           return str(result)
-       return FunctionTool.from_defaults(
-           fn=book_rag_search, name="book_rag", description="...")
-   ```
-
-3. 在 `api/main.py` 与根 `main.py` 的工具装配处，把 `create_book_rag_tool(index_manager, llm)`
-   加入 `tools` 列表。
-
-口子三要素：本包常驻 + `book_tools` 工厂约定 + `core.agent.source_context.add_sources` 公开钩子。
+分层约束：`api/`(Web) → `core/`(领域) → `configs/`，core 不依赖 api。

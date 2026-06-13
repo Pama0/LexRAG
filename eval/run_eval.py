@@ -98,7 +98,7 @@ async def _run(testset_path: str, limit: int | None) -> dict:
 
     from eval.config import CHROMA_DIR, RESULTS_DIR, make_eval_embeddings, make_eval_llm
     from eval.metrics import build_metric_specs
-    from eval.sut import BookRagWorkflowSystem
+    from eval.sut import DocQueryWorkflowSystem
     from configs.embedding import configure_embedding
     from configs.llm import configure_llm
     from core.rag.data_loader import RAGIndexManager
@@ -114,7 +114,8 @@ async def _run(testset_path: str, limit: int | None) -> dict:
     # SUT 检索需要全局 Settings.embed_model 与 llm，二者都要先配置
     sut_llm = configure_llm()
     configure_embedding()
-    sut = BookRagWorkflowSystem(
+    # 当前系统 DocQueryWorkflow（flags 缺省 = 构造默认决策配置）
+    sut = DocQueryWorkflowSystem(
         index_manager=RAGIndexManager(persist_dir=CHROMA_DIR), llm=sut_llm
     )
 

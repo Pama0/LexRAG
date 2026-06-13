@@ -79,8 +79,6 @@ Memory 是整个构想的地基，**最该提前定接口**。要点：
 |---|---|---|
 | `core/workflow/query_preprocess.py` | step1：规范化+指代+降噪+难度分类（一次 LLM call） | **拆分**：通用净化上提 Router，降噪+难度留 QA。见 [拆分 spec](superpowers/specs/2026-06-11-intent-router-and-preprocess-split-design.md) |
 | `core/workflow/doc_workflow.py` | 顶层编排骨架（preprocess→路由→分支 agent→finalize） | **QA capability** 的种子 + Router 雏形 |
-| `core/workflow/book_rag.py` | 旧版 judge workflow（含未收口的 `assume`） | **冻结/退役**，逻辑已被 `doc_workflow` 取代 |
-| `core/tools/book_tools.py` | book_search / list_books 工具 | QA capability 的工具子集 |
 | Chroma + `index_manager` | 文档索引 | Layer 0 检索服务 |
 | 用户记忆系统 | 未建 | Layer 0，规划中 |
 
