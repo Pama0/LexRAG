@@ -30,6 +30,7 @@ from llama_index.core.vector_stores import (
 )
 from llama_index.core.workflow import Context, Event
 
+from core.retrieval.rerank import Reranker
 from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
 from core.workflow.query_decompose import QueryDecomposer
 from core.workflow.query_dimension import DimensionExtractor
@@ -66,11 +67,15 @@ class QaCapability:
         llm: LLM,
         similarity_top_k: int = 5,
         max_sub_queries: int = 6,
+        reranker: "Reranker | None" = None,
+        rerank_candidate_k: int = 20,
     ):
         self.index_manager = index_manager
         self.llm = llm
         self.similarity_top_k = similarity_top_k
         self.max_sub_queries = max_sub_queries
+        self.reranker = reranker
+        self.rerank_candidate_k = rerank_candidate_k
         self.preprocessor = QueryPreprocessor(llm)
         self.decomposer = QueryDecomposer(llm)
         self.dimensioner = DimensionExtractor(llm)
@@ -281,12 +286,17 @@ class QaCapability:
         ])
 
     async def _retrieve_nodes(self, query: str, book_titles: Optional[list[str]]):
+        # 无 reranker（基线）→ 直接召回 top_k；有 → 过召回到候选池再重排截回 top_k
+        fetch_k = self.rerank_candidate_k if self.reranker else self.similarity_top_k
         index = self.index_manager.get_index()
         retriever = index.as_retriever(
-            similarity_top_k=self.similarity_top_k,
+            similarity_top_k=fetch_k,
             filters=self._make_filters(book_titles),
         )
-        return await retriever.aretrieve(query)
+        nodes = await retriever.aretrieve(query)
+        if self.reranker:
+            nodes = await self.reranker.rerank(query, nodes, self.similarity_top_k)
+        return nodes
 
     async def _stream_tokens(self, query: str, nodes: list):
         """流式合成的 token 源。单独成方法便于单测替身。"""
