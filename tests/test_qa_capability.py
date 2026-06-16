@@ -352,3 +352,44 @@ def test_format_probe_empty_and_nonempty():
     assert "未召回" in qa._format_probe([], None)
     out = qa._format_probe([_PNode("片段X", book="A", chapter="1.1")], None)
     assert "共命中 1 段" in out and "《A》1.1" in out and "片段X" in out
+
+
+# ── rerank 接入 ───────────────────────────────────────────────────────
+from core.workflow.qa_capability import QaCapability as _QaCap
+
+
+class _RecordingReranker:
+    """记录入参；把候选倒序后截 top_n（验证顺序确实被改 + 截断）。"""
+
+    def __init__(self):
+        self.calls = []
+
+    async def rerank(self, query, nodes, top_n):
+        self.calls.append((query, list(nodes), top_n))
+        return list(reversed(nodes))[:top_n]
+
+
+async def test_retrieve_nodes_without_reranker_keeps_top_k():
+    im = FakeIndexManager(nodes=["a", "b", "c"])
+    qa = _QaCap(im, FakeLLM(), similarity_top_k=3)
+
+    nodes = await qa._retrieve_nodes("q", None)
+
+    assert nodes == ["a", "b", "c"]
+    # 基线：用 similarity_top_k 召回，不过召回
+    assert im._index.last_kw["similarity_top_k"] == 3
+
+
+async def test_retrieve_nodes_with_reranker_overfetches_then_truncates():
+    im = FakeIndexManager(nodes=["a", "b", "c", "d", "e"])
+    rr = _RecordingReranker()
+    qa = _QaCap(im, FakeLLM(), similarity_top_k=2,
+                reranker=rr, rerank_candidate_k=5)
+
+    nodes = await qa._retrieve_nodes("B+树", None)
+
+    # 召回用候选池大小，不是 top_k
+    assert im._index.last_kw["similarity_top_k"] == 5
+    # reranker 收到候选并按 top_n 截断
+    assert rr.calls == [("B+树", ["a", "b", "c", "d", "e"], 2)]
+    assert nodes == ["e", "d"]  # 倒序后截 2
