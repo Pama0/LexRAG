@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.core import Settings
 
+from configs.usage_logging import install_usage_logging
+
 load_dotenv()
 gemini_api_key = os.getenv('GEMINI_API_KEY')
 zhipu_api_key = os.getenv('ZHIPU_API_KEY')
@@ -30,4 +32,6 @@ def configure_llm():
         },
     )
     Settings.llm = llm
+    # 注册 LLM usage / 缓存命中观测（幂等）：日志走 logger "llm.usage"
+    install_usage_logging()
     return llm

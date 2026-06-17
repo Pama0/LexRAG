@@ -51,6 +51,20 @@ async def rename_session(db: AsyncSession, session_id: str, title: str) -> bool:
     return res.rowcount > 0
 
 
+async def update_summary(
+    db: AsyncSession, session_id: str, summary: str, summarized_upto_id: int
+) -> bool:
+    """更新会话的滚动摘要 + 已摘要水位（上下文压缩用）。"""
+    stmt = (
+        update(SessionRow)
+        .where(SessionRow.id == session_id)
+        .values(summary=summary, summarized_upto_id=summarized_upto_id)
+    )
+    res = await db.execute(stmt)
+    await db.commit()
+    return res.rowcount > 0
+
+
 async def delete_session(db: AsyncSession, session_id: str) -> bool:
     stmt = delete(SessionRow).where(SessionRow.id == session_id)
     res = await db.execute(stmt)

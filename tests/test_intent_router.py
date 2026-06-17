@@ -115,6 +115,24 @@ async def test_run_rejects_invalid_intent():
     assert result.clean_query == "帮我规划人生"
 
 
+def test_format_history_keeps_summary_head_beyond_window():
+    from core.workflow.intent_router import format_history
+    from core.workflow.summarizer import SUMMARY_MARKER
+    msgs = [_Msg("user", f"{SUMMARY_MARKER}\n远期摘要内容")]
+    msgs += [_Msg("user", f"q{i}") for i in range(10)]
+    out = format_history(FakeMemory(msgs), max_msgs=3)
+    assert "远期摘要内容" in out   # 摘要头永远保留
+    assert "q9" in out             # 最近的消息在
+    assert "q0" not in out         # 窗口外的普通消息被截断
+
+
+def test_format_history_without_summary_just_tail():
+    from core.workflow.intent_router import format_history
+    msgs = [_Msg("user", f"q{i}") for i in range(10)]
+    out = format_history(FakeMemory(msgs), max_msgs=3)
+    assert "q9" in out and "q0" not in out
+
+
 async def test_run_classifies_chitchat():
     llm = FakeLLM(['{"intent": "chitchat", "clean_query": "你好"}'])
     result = await _router(llm).run("你好")

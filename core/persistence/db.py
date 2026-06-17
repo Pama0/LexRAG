@@ -36,6 +36,10 @@ class SessionRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    # 上下文压缩：远期历史的滚动摘要 + 已折入摘要的最大消息 id（水位）。
+    # 见 core/workflow/summarizer.py（持久化增量摘要）。
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    summarized_upto_id: Mapped[int] = mapped_column(default=0)
 
     messages: Mapped[list["MessageRow"]] = relationship(
         back_populates="session",
@@ -65,10 +69,23 @@ _engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
 
+def _migrate_add_columns(conn) -> None:
+    """给已有 sessions 表补新列（create_all 只建缺表、不加列）。幂等：缺啥补啥。"""
+    existing = {row[1] for row in conn.exec_driver_sql(
+        "PRAGMA table_info(sessions)").fetchall()}
+    if "summary" not in existing:
+        conn.exec_driver_sql("ALTER TABLE sessions ADD COLUMN summary TEXT")
+    if "summarized_upto_id" not in existing:
+        conn.exec_driver_sql(
+            "ALTER TABLE sessions ADD COLUMN summarized_upto_id INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 async def init_db() -> None:
-    """启动时调用：创建所有表（不存在才建）"""
+    """启动时调用：创建所有表（不存在才建）+ 给已有表补列"""
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_add_columns)
 
 
 @asynccontextmanager

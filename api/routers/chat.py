@@ -16,6 +16,12 @@ from core.workflow.doc_workflow import (
 from core.persistence.db import get_session
 from api.schemas import ChatRequest, ChatResponse, SourceRef
 from core.agent.source_context import node_to_source_ref
+from core.workflow.summarizer import (
+    SUMMARY_KEEP_LAST_MSGS,
+    SUMMARY_TRIGGER_MSGS,
+    fold_summary,
+    plan_overflow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +53,8 @@ def create_chat_router(query_service: DocQueryService) -> APIRouter:
 
         lock = query_service.get_lock(session_id)
         async with lock:
-            # 从 DB 加载历史构造 memory
-            async with get_session() as db:
-                history = await repo.list_messages(db, session_id)
-            memory = query_service.build_memory(history)
+            # 从 DB 加载摘要 + 未摘要的最近历史构造 memory
+            memory, history_len = await _load_memory(query_service, session_id)
 
             try:
                 # scope 由 book_titles 直接传入 workflow（不再走 contextvar）
@@ -72,8 +76,10 @@ def create_chat_router(query_service: DocQueryService) -> APIRouter:
                 user_msg=req.message,
                 assistant_msg=answer_text,
                 sources=sources,
-                is_first_in_session=(len(history) == 0),
+                is_first_in_session=(history_len == 0),
             )
+            # 答复已就绪后再压缩（非流式会在触发轮多等一次摘要 LLM）
+            await _maybe_compact(query_service, session_id)
 
         return ChatResponse(answer=answer_text, sources=sources)
 
@@ -96,10 +102,8 @@ def create_chat_router(query_service: DocQueryService) -> APIRouter:
             yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
 
             async with lock:
-                async with get_session() as db:
-                    history = await repo.list_messages(db, session_id)
-                memory = query_service.build_memory(history)
-                is_first = len(history) == 0
+                memory, history_len = await _load_memory(query_service, session_id)
+                is_first = history_len == 0
 
                 try:
                     # scope 由 book_titles 直接传入 workflow（不再走 contextvar）
@@ -133,6 +137,8 @@ def create_chat_router(query_service: DocQueryService) -> APIRouter:
                     )
 
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    # done 已发出（客户端已拿到完整答案）后再压缩，不拖慢回答
+                    await _maybe_compact(query_service, session_id)
                 except Exception as e:
                     logger.exception("Workflow stream failed")
                     yield f"data: {json.dumps({'type': 'error', 'data': str(e)}, ensure_ascii=False)}\n\n"
@@ -178,6 +184,50 @@ def _nodes_to_sources(nodes: list) -> list[SourceRef]:
         seen.add(key)
         unique.append(ref)
     return unique
+
+async def _load_memory(query_service, session_id: str):
+    """读会话摘要 + 历史，按水位过滤出【未摘要的最近消息】构造 memory。
+
+    已折入摘要的旧消息由 summary 代表（前置进 memory），其余原文照常带入。
+    返回 (memory, history_len)；history_len 用于判定是否首条（自动标题）。
+    """
+    async with get_session() as db:
+        sess = await repo.get_session(db, session_id)
+        history = await repo.list_messages(db, session_id)
+    upto = (sess.summarized_upto_id or 0) if sess else 0
+    summary = sess.summary if sess else None
+    recent = [m for m in history if m.id > upto]
+    return query_service.build_memory(recent, summary=summary), len(history)
+
+
+async def _maybe_compact(query_service, session_id: str) -> None:
+    """答复送出后的会话压缩：未摘要消息超阈值则增量折叠进摘要。
+
+    绝不影响对话：任何异常只记日志。在 per-session 锁内调用，同会话不并发。
+    LLM 摘要调用放在两个短 DB 事务【之间】，不长时间占着连接。
+    """
+    try:
+        async with get_session() as db:
+            sess = await repo.get_session(db, session_id)
+            messages = await repo.list_messages(db, session_id)
+        if sess is None:
+            return
+        overflow, new_upto = plan_overflow(
+            messages, sess.summarized_upto_id or 0,
+            trigger=SUMMARY_TRIGGER_MSGS, keep_last=SUMMARY_KEEP_LAST_MSGS,
+        )
+        if overflow is None:
+            return
+        new_summary = await fold_summary(query_service.llm, sess.summary, overflow)
+        async with get_session() as db:
+            await repo.update_summary(db, session_id, new_summary, new_upto)
+        logger.info(
+            "compact: session=%s 折叠 %d 条 → 摘要，水位至 id=%d",
+            session_id, len(overflow), new_upto,
+        )
+    except Exception:
+        logger.exception("会话摘要压缩失败（不影响对话）")
+
 
 async def _persist_pair(
     session_id: str,

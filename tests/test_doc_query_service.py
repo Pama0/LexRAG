@@ -49,6 +49,23 @@ def test_build_memory_maps_roles_and_skips_empty():
     assert [m.content for m in msgs] == ["问题1", "答案1"]
 
 
+def test_build_memory_prepends_summary():
+    from core.workflow.summarizer import SUMMARY_MARKER
+    svc = _svc()
+    mem = svc.build_memory([_DBMsg("user", "最近问题")], summary="用户在学MySQL锁")
+    msgs = mem.get()
+    assert msgs[0].content.startswith(SUMMARY_MARKER)
+    assert "用户在学MySQL锁" in msgs[0].content
+    assert msgs[1].content == "最近问题"
+
+
+def test_build_memory_no_summary_unchanged():
+    svc = _svc()
+    mem = svc.build_memory([_DBMsg("user", "q")])
+    assert len(mem.get()) == 1
+    assert mem.get()[0].content == "q"
+
+
 def test_run_handler_passes_args_to_workflow(monkeypatch):
     import core.workflow.doc_query_service as svc_mod
 

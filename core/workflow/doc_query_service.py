@@ -16,6 +16,7 @@ from llama_index.core.llms import LLM
 from llama_index.core.memory import ChatMemoryBuffer
 
 from core.workflow.doc_workflow import DocQueryWorkflow
+from core.workflow.summarizer import SUMMARY_MARKER
 
 
 class DocQueryService:
@@ -44,9 +45,18 @@ class DocQueryService:
             self._locks[session_id] = lock
         return lock
 
-    def build_memory(self, db_messages) -> ChatMemoryBuffer:
-        """根据数据库历史消息构造 ChatMemoryBuffer（鸭子类型读 .role / .content）。"""
+    def build_memory(self, db_messages, summary: Optional[str] = None) -> ChatMemoryBuffer:
+        """根据数据库历史消息构造 ChatMemoryBuffer（鸭子类型读 .role / .content）。
+
+        summary 非空时，前置一条带 SUMMARY_MARKER 的消息承载被压缩掉的远期上下文；
+        intent_router.format_history 会据该标记【永远保留】此头部。db_messages 应只传
+        【未摘要的最近消息】（已摘要的部分由 summary 代表），由装配层按水位过滤。
+        """
         memory = ChatMemoryBuffer.from_defaults(token_limit=self.memory_token_limit)
+        if summary:
+            memory.put(ChatMessage(
+                role=MessageRole.USER, content=f"{SUMMARY_MARKER}\n{summary}"
+            ))
         role_map = {"user": MessageRole.USER, "assistant": MessageRole.ASSISTANT}
         for m in db_messages:
             role = role_map.get(m.role)
