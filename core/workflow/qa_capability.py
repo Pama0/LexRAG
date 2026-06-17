@@ -18,6 +18,7 @@
 流式：检索/合成进度通过 `ctx.write_event_to_stream` 推【流式专用事件】（本模块定义，
 `doc_workflow` re-export、api 层映射成前端 SSE）。这些事件不参与 workflow step 图。
 """
+import asyncio
 import logging
 from typing import Optional
 
@@ -78,6 +79,7 @@ class QaCapability:
         self.preprocessor = QueryPreprocessor(llm)
         self.decomposer = QueryDecomposer(llm)
         self.dimensioner = DimensionExtractor(llm)
+        self._retrieve_concurrency = 4  # 扇出检索并发上限，防 embedding/BM25/rerank 打爆
 
     # ── 预处理：降噪 + 难度/明确性分类（不再消指代）──────────────────
     async def classify(
@@ -183,7 +185,7 @@ class QaCapability:
 
         # 4) 逐维度检索 + 分节合成（与 split 共用 helper）
         sections = [(d.label, d.query) for d in dimensions]
-        return await self._retrieve_and_reduce(ctx, sections, book_titles, preamble)
+        return await self._retrieve_and_concat(ctx, sections, book_titles, preamble)
 
     async def split(
         self, ctx: Context, query: str, book_titles: Optional[list[str]]
@@ -206,7 +208,7 @@ class QaCapability:
             (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
             for n in located
         ]
-        sub_queries = await self.decomposer.run(
+        sub_queries, mode = await self.decomposer.run(
             query, headings, passages, self.max_sub_queries
         )
 
@@ -222,30 +224,75 @@ class QaCapability:
             answer = await self._synthesize_stream(ctx, query, located)
             return answer, located
 
-        # 3-4) 逐项检索 + map-reduce 汇总（与 assume 共用同一 helper）
+        # 综合型：扇出检索 → 去重合并 → 对原始问题一次整合合成（单子查询天然退化单轮）
+        if mode == "synthesize":
+            return await self._retrieve_and_synthesize(ctx, query, sub_queries, book_titles)
+
+        # 罗列型：逐项检索 + map-reduce 汇总（与 assume 共用同一 helper）
         sections = [(sq, sq) for sq in sub_queries]
-        return await self._retrieve_and_reduce(ctx, sections, book_titles)
+        return await self._retrieve_and_concat(ctx, sections, book_titles)
+
+    @staticmethod
+    def _node_id(n) -> object:
+        """稳定去重键：优先 NodeWithScore.node.node_id，退回 node_id，再退回对象 id。"""
+        node = getattr(n, "node", None)
+        return getattr(node, "node_id", None) or getattr(n, "node_id", None) or id(n)
+
+    def _merge_pool(self, lists: list[list]) -> list:
+        """多路检索结果按 node_id 去重合并，保首次出现顺序。"""
+        seen: set = set()
+        out: list = []
+        for ns in lists:
+            for n in ns:
+                k = self._node_id(n)
+                if k in seen:
+                    continue
+                seen.add(k)
+                out.append(n)
+        return out
+
+    async def _retrieve_and_synthesize(
+        self,
+        ctx: Context,
+        original_query: str,
+        sub_queries: list[str],
+        book_titles: Optional[list[str]],
+    ) -> tuple[str, list]:
+        """synthesize 模式：扇出检索（并发）→ 去重合并 → 对原始问题一次整合合成。
+
+        子查询只为拓宽召回面；合成用【原始问题】，让 LLM 同时看到所有子项原始片段去比较/讲关系。
+        """
+        retrieved = await self._retrieve_all(sub_queries, book_titles)
+        pool = self._merge_pool(retrieved)
+        if self.reranker:
+            # 拿原始问题（非子查询）对合并池重排，截到上下文预算
+            pool = await self.reranker.rerank(original_query, pool, self.rerank_candidate_k)
+        else:
+            pool = sorted(pool, key=lambda n: getattr(n, "score", 0) or 0, reverse=True)[
+                : self.rerank_candidate_k
+            ]
+        ctx.write_event_to_stream(RetrievalDoneEvent(count=len(pool)))
+        if not pool:
+            scope = f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
+            return f"在{scope}没有检索到与「{original_query}」相关的内容。", []
+        answer = await self._synthesize_stream(ctx, original_query, pool)
+        return answer, pool
 
     # ── 公共流水线：逐项检索 → 一次 RetrievalDone →（可选声明）→ 逐节合成拼接 ──
-    async def _retrieve_and_reduce(
+    async def _retrieve_and_concat(
         self,
         ctx: Context,
         sections: list[tuple[str, str]],
         book_titles: Optional[list[str]],
         preamble: str = "",
     ) -> tuple[str, list]:
-        """sections: [(分节标题, 检索/合成用子查询)]。split / assume 共用。
+        """sections: [(分节标题, 检索/合成用子查询)]。list 模式：逐节裸拼（split / assume 共用）。
 
-        - 先全检索（便于只发一次 RetrievalDone）。
-        - preamble 非空 → 进入答案阶段后先推一个 AnswerDeltaEvent，并拼在答案最前。
-        - 每节：推标题 delta → 流式合成该节（空命中给占位）。
+        - 扇出检索并发；逐节合成仍串行（保分节流式顺序）。
+        - 先全检索（只发一次 RetrievalDone）。preamble 非空 → 答案阶段先推一个 AnswerDeltaEvent。
         """
-        retrieved: list = []
-        all_nodes: list = []
-        for _heading, sub_query in sections:
-            ns = await self._retrieve_nodes(sub_query, book_titles)
-            retrieved.append(ns)
-            all_nodes.extend(ns)
+        retrieved = await self._retrieve_all([sq for _h, sq in sections], book_titles)
+        all_nodes: list = [n for ns in retrieved for n in ns]
         ctx.write_event_to_stream(RetrievalDoneEvent(count=len(all_nodes)))
 
         parts: list[str] = []
@@ -282,6 +329,18 @@ class QaCapability:
         if self.reranker:
             nodes = await self.reranker.rerank(query, nodes, self.similarity_top_k)
         return nodes
+
+    async def _retrieve_all(
+        self, sub_queries: list[str], book_titles: Optional[list[str]]
+    ) -> list[list]:
+        """并发扇出检索：对每个子查询各检索一次，返回与入参同序的 node 列表的列表。"""
+        sem = asyncio.Semaphore(self._retrieve_concurrency)
+
+        async def _one(q: str):
+            async with sem:
+                return await self._retrieve_nodes(q, book_titles)
+
+        return await asyncio.gather(*(_one(q) for q in sub_queries))
 
     async def _stream_tokens(self, query: str, nodes: list):
         """流式合成的 token 源。单独成方法便于单测替身。"""
