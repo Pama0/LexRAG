@@ -390,3 +390,29 @@ def test_reranker_name_resolved_and_injected(monkeypatch):
     assert captured["name"] == "bge-reranker-v2-m3"
     assert wf.qa.reranker is sentinel
 
+
+# ── retriever 名字 → 对象注入 QaCapability（装配单测）─────────────────
+def test_default_retriever_is_vector():
+    from core.retrieval.retrieve import VectorRetriever
+
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM())
+    assert isinstance(wf.qa.retriever, VectorRetriever)
+
+
+def test_retriever_name_resolved_and_injected(monkeypatch):
+    sentinel = object()
+    import core.workflow.doc_workflow as mod
+
+    captured = {}
+
+    def fake_make(name):
+        captured["name"] = name
+        return sentinel
+
+    monkeypatch.setattr(mod, "make_retriever", fake_make)
+
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM(), retriever="hybrid")
+
+    assert captured["name"] == "hybrid"
+    assert wf.qa.retriever is sentinel
+
