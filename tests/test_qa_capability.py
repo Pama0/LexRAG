@@ -136,7 +136,7 @@ async def test_split_decomposes_and_concatenates_sections():
     qa = _split_qa()
 
     async def fake_decompose(clean_query, headings, passages, max_items):
-        return ["工具A 是什么", "工具B 怎么用"]
+        return ["工具A 是什么", "工具B 怎么用"], "list"
 
     qa.decomposer.run = fake_decompose
     ctx = FakeCtx()
@@ -153,7 +153,7 @@ async def test_split_emits_single_retrieval_done_and_section_headings():
     qa = _split_qa()
 
     async def fake_decompose(clean_query, headings, passages, max_items):
-        return ["子项1", "子项2"]
+        return ["子项1", "子项2"], "list"
 
     qa.decomposer.run = fake_decompose
     ctx = FakeCtx()
@@ -170,7 +170,7 @@ async def test_split_falls_back_to_single_retrieve_when_no_subqueries():
     qa = _split_qa()
 
     async def empty_decompose(clean_query, headings, passages, max_items):
-        return []
+        return [], "list"
 
     qa.decomposer.run = empty_decompose
     ctx = FakeCtx()

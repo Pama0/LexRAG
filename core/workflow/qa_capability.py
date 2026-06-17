@@ -206,7 +206,7 @@ class QaCapability:
             (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
             for n in located
         ]
-        sub_queries = await self.decomposer.run(
+        sub_queries, _mode = await self.decomposer.run(
             query, headings, passages, self.max_sub_queries
         )
 
