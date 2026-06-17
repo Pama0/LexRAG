@@ -2,7 +2,7 @@
 
 职责单一：把【已净化的 clean_query】→【降噪后的检索 query + 难度分类】。
 - 降噪（去口语/礼貌/请求词，留实体、技术名词、限定词）
-- 难度分类 → retrievable / pending_split / missing_info / ambiguous / other
+- 难度分类 → retrievable / pending_split / missing_info / ambiguous / other / out_of_scope
 
 【边界】指代消解 + 规范化已在门口（intent_router）完成，这里只收 clean_query，
 不再读历史、不再消指代。"为检索而降噪 + 难度路由"是检索专属，故留在 QA 内部。
