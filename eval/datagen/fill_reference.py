@@ -84,7 +84,7 @@ async def main():
     print(f"[补 reference] {len(rows)} 条，慷慨检索 K={REF_K}……\n")
     for r in rows:
         cat = r.get("category", "")
-        if cat == "missing_info":
+        if cat in ("missing_info", "out_of_scope"):
             r["reference"] = ""
             print(f"[missing_info] {r['user_input'][:30]} → reference=\"\"")
             continue

@@ -131,3 +131,22 @@ async def test_run_without_retrieval_context_still_works():
     llm = FakeLLM(['{"category": "retrievable", "rewritten_query": "MySQL锁"}'])
     result = await _pp(llm).run("MySQL锁")
     assert result.category == "retrievable"
+
+
+async def test_run_classifies_out_of_scope():
+    # 库外：问题清晰但探测召回片段与主题无关（库里没有该主题）
+    llm = FakeLLM([
+        '{"category": "out_of_scope", "rewritten_query": "PostgreSQL的MVCC是怎么实现的", "reason": "库外，召回片段均不相关"}'
+    ])
+    result = await _pp(llm).run("PostgreSQL的MVCC是怎么实现的")
+    assert result.category == "out_of_scope"
+    assert result.reason == "库外，召回片段均不相关"
+
+
+async def test_run_accepts_out_of_scope_in_schema():
+    # out_of_scope 必须在 Literal 枚举内，不能被 Pydantic 当非法值降级
+    llm = FakeLLM([
+        '{"category": "out_of_scope", "rewritten_query": "MongoDB分片"}'
+    ])
+    result = await _pp(llm).run("MongoDB分片")
+    assert result.category == "out_of_scope"   # 未被降级成 retrievable
