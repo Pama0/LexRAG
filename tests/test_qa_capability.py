@@ -429,3 +429,24 @@ async def test_retrieve_nodes_retriever_overfetches_when_reranker_set():
     await qa._retrieve_nodes("q", None)
     # retriever 拿候选池大小 5（reranker 再截 2）
     assert rr_ret.calls[0][2] == 5
+
+
+import asyncio
+
+
+async def test_retrieve_all_runs_concurrently_and_preserves_order():
+    qa = _qa()
+    started = 0
+    release = asyncio.Event()
+
+    async def fake_rn(query, book_titles):
+        nonlocal started
+        started += 1
+        if started >= 2:
+            release.set()      # 两个都进来才放行 → 串行会卡死，证明并发
+        await release.wait()
+        return [query]
+
+    qa._retrieve_nodes = fake_rn
+    out = await asyncio.wait_for(qa._retrieve_all(["a", "b"], None), timeout=1.0)
+    assert out == [["a"], ["b"]]   # gather 保持入参顺序
