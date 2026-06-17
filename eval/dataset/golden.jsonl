@@ -17,7 +17,7 @@
 {"user_input": "它和前面提到的那个有什么区别？", "category": "missing_info", "scope": null, "reference": ""}
 {"user_input": "刚才那个怎么用？", "category": "missing_info", "scope": null, "reference": ""}
 {"user_input": "这个的适用场景是什么？", "category": "missing_info", "scope": null, "reference": ""}
-{"user_input": "PostgreSQL的MVCC是怎么实现的？", "category": "missing_info", "scope": null, "reference": ""}
-{"user_input": "MongoDB的分片机制是怎样的？", "category": "missing_info", "scope": null, "reference": ""}
-{"user_input": "Oracle的RAC架构是什么？", "category": "missing_info", "scope": null, "reference": ""}
-{"user_input": "Cassandra的一致性级别有哪些？", "category": "missing_info", "scope": null, "reference": ""}
+{"user_input": "PostgreSQL的MVCC是怎么实现的？", "category": "out_of_scope", "scope": null, "reference": ""}
+{"user_input": "MongoDB的分片机制是怎样的？", "category": "out_of_scope", "scope": null, "reference": ""}
+{"user_input": "Oracle的RAC架构是什么？", "category": "out_of_scope", "scope": null, "reference": ""}
+{"user_input": "Cassandra的一致性级别有哪些？", "category": "out_of_scope", "scope": null, "reference": ""}
