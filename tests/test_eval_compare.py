@@ -31,3 +31,49 @@ def test_render_delta_table_none_metric_shows_dash():
     ]
     md = render_delta_table(variants, baseline="base")
     assert "—" in md   # 无值列显示破折号
+
+
+# ── build_sut 工厂与 agent 哨兵变体 ──────────────────────────────
+from eval.harness.compare import build_sut, AGENT_VARIANT, VARIANTS
+from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem
+
+
+def test_agent_variant_registered_as_sentinel():
+    assert AGENT_VARIANT in VARIANTS
+    assert VARIANTS[AGENT_VARIANT] is None   # 哨兵：非 flags dict
+
+
+def test_build_sut_agent_variant_returns_agent_system():
+    sut = build_sut(AGENT_VARIANT, index_manager=object(), llm=object())
+    assert isinstance(sut, AgentSystem)
+
+
+def test_build_sut_workflow_variant_returns_workflow_system():
+    sut = build_sut("baseline(全单轮)", index_manager=object(), llm=object())
+    assert isinstance(sut, DocQueryWorkflowSystem)
+
+
+def test_build_sut_unknown_name_raises():
+    import pytest
+    with pytest.raises(KeyError):
+        build_sut("不存在的变体", index_manager=object(), llm=object())
+
+
+# ── baseline 回退（文档命令场景：默认 baseline 不在所选 --variants 子集里）──
+from eval.harness.compare import resolve_baseline
+
+
+def test_resolve_baseline_present_returns_it():
+    assert resolve_baseline("全开", ["全开", "agent(自主规划)"]) == "全开"
+
+
+def test_resolve_baseline_absent_falls_back_to_first():
+    # 文档命令场景：默认 baseline 不在所选变体里 → 回退到首个变体
+    assert resolve_baseline("baseline(全单轮)", ["全开", "agent(自主规划)"]) == "全开"
+
+
+def test_render_delta_table_raises_on_missing_baseline():
+    import pytest
+    variants = [{"name": "全开", "report": {"classification": {"accuracy": 0.7}, "metric_means": {}}}]
+    with pytest.raises(ValueError):
+        render_delta_table(variants, baseline="不存在的baseline")
