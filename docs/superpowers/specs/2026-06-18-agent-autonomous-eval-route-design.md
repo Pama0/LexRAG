@@ -87,7 +87,7 @@ if exp and cat:
 
 `VARIANTS` 是「名字→flags dict」，喂给 `DocQueryWorkflowSystem`。agent 是另一个 SUT 类，不是 flag 组合。做法：
 - 新增常量 `AGENT_VARIANT = "agent(自主规划)"`。
-- `--variants` 的可选名集合里加入 `AGENT_VARIANT`（CLI help 与默认全集都含它）。
+- `AGENT_VARIANT` 进 **CLI 可选名集合（choices）但不进默认 `--variants` 全集**（裸跑只跑 workflow 变体，agent 需显式 `--variants ... "agent(自主规划)"`）。
 - `_run_variants` 按名分流：
   ```python
   if name == AGENT_VARIANT:

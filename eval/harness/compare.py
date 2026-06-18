@@ -30,7 +30,9 @@ def _fmt(val, base):
 
 def render_delta_table(variants: list[dict], baseline: str) -> str:
     """variants: [{"name", "report"(aggregate 输出)}]。→ Markdown delta 表。"""
-    base_rep = next(v["report"] for v in variants if v["name"] == baseline)
+    base_rep = next((v["report"] for v in variants if v["name"] == baseline), None)
+    if base_rep is None:
+        raise ValueError(f"baseline {baseline!r} 不在 variants 中：{[v['name'] for v in variants]}")
     header = "| 配置 | " + " | ".join(c[0] for c in _COLS) + " |"
     sep = "|" + "---|" * (len(_COLS) + 1)
     lines = [header, sep]
@@ -62,7 +64,8 @@ VARIANTS = {
 }
 
 # agent 自主规划路线：另一个 SUT 类（非 flags 组合）。值置 None 作哨兵，
-# 既进默认全集 / CLI 可选名，又能在 build_sut 里按 None 分流。
+# 进 CLI 可选名集合（choices）但不进默认 --variants 全集（多轮真实 agent，烧 LLM，需显式选）；
+# build_sut 里按 None 分流到 AgentSystem。
 AGENT_VARIANT = "agent(自主规划)"
 VARIANTS[AGENT_VARIANT] = None
 
@@ -70,9 +73,17 @@ VARIANTS[AGENT_VARIANT] = None
 def build_sut(name: str, index_manager, llm):
     """按变体名构造被测系统：哨兵(None) → AgentSystem，否则 DocQueryWorkflowSystem(flags)。"""
     from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem
-    if VARIANTS.get(name) is None:
+    if name not in VARIANTS:
+        raise KeyError(name)
+    flags = VARIANTS[name]
+    if flags is None:
         return AgentSystem(index_manager, llm)
-    return DocQueryWorkflowSystem(index_manager, llm, flags=VARIANTS[name])
+    return DocQueryWorkflowSystem(index_manager, llm, flags=flags)
+
+
+def resolve_baseline(baseline: str, variant_names: list[str]) -> str:
+    """baseline 名不在所选变体里时回退到第一个变体（leftmost 作 delta 锚）。"""
+    return baseline if baseline in variant_names else (variant_names[0] if variant_names else baseline)
 
 
 async def _run_variants(testset_path, limit, names):
@@ -144,14 +155,17 @@ def main():
     p = argparse.ArgumentParser(description="决策对比评测（ablation）")
     p.add_argument("--testset", required=True, help="测试集 jsonl（建议金标准 golden.jsonl）")
     p.add_argument("--limit", type=int, default=None, help="只跑前 N 条")
-    p.add_argument("--variants", nargs="+", default=list(VARIANTS.keys()),
-                   help=f"变体名子集，可选：{list(VARIANTS.keys())}")
+    p.add_argument("--variants", nargs="+",
+                   default=[n for n in VARIANTS if n != AGENT_VARIANT],
+                   choices=list(VARIANTS.keys()),
+                   help=f"变体名子集，可选：{list(VARIANTS.keys())}；agent(自主规划) 需显式指定")
     p.add_argument("--baseline", default="baseline(全单轮)", help="作为 delta 基准的变体名")
     p.add_argument("--out", default=None,
                    help="对比表 Markdown 落盘路径；缺省 eval/results/compare_<时间戳>.md")
     p.add_argument("--detail", default=None,
                    help="每条明细 CSV 落盘路径；缺省 eval/results/compare_<时间戳>_detail.csv")
     args = p.parse_args()
+    args.baseline = resolve_baseline(args.baseline, args.variants)
     variants, detail = asyncio.run(_run_variants(args.testset, args.limit, args.variants))
     table = render_delta_table(variants, baseline=args.baseline)
     print(table)

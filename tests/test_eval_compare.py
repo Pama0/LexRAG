@@ -51,3 +51,29 @@ def test_build_sut_agent_variant_returns_agent_system():
 def test_build_sut_workflow_variant_returns_workflow_system():
     sut = build_sut("baseline(全单轮)", index_manager=object(), llm=object())
     assert isinstance(sut, DocQueryWorkflowSystem)
+
+
+def test_build_sut_unknown_name_raises():
+    import pytest
+    with pytest.raises(KeyError):
+        build_sut("不存在的变体", index_manager=object(), llm=object())
+
+
+# ── baseline 回退（文档命令场景：默认 baseline 不在所选 --variants 子集里）──
+from eval.harness.compare import resolve_baseline
+
+
+def test_resolve_baseline_present_returns_it():
+    assert resolve_baseline("全开", ["全开", "agent(自主规划)"]) == "全开"
+
+
+def test_resolve_baseline_absent_falls_back_to_first():
+    # 文档命令场景：默认 baseline 不在所选变体里 → 回退到首个变体
+    assert resolve_baseline("baseline(全单轮)", ["全开", "agent(自主规划)"]) == "全开"
+
+
+def test_render_delta_table_raises_on_missing_baseline():
+    import pytest
+    variants = [{"name": "全开", "report": {"classification": {"accuracy": 0.7}, "metric_means": {}}}]
+    with pytest.raises(ValueError):
+        render_delta_table(variants, baseline="不存在的baseline")
