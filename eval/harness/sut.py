@@ -37,6 +37,20 @@ def map_doc_result(result, response_cls=None) -> RagOutput:
     return RagOutput(str(result), [], "empty", category)
 
 
+def _node_text(n) -> str:
+    """从 NodeWithScore / Node 取正文（镜像 QaAgent._search 的提取逻辑）。"""
+    return n.get_content() if hasattr(n, "get_content") else getattr(n, "text", "")
+
+
+def map_agent_result(answer: str, sources: list) -> RagOutput:
+    """QaAgent.run() 的 (answer, source_nodes) → RagOutput；agent 不产分类，category 恒空。"""
+    text = (answer or "").strip()
+    if not text or not sources:
+        return RagOutput(text, [], "empty", "")
+    contexts = [_node_text(n) for n in sources]
+    return RagOutput(text, contexts, "answered", "")
+
+
 class DocQueryWorkflowSystem:
     """包装当前 DocQueryWorkflow，按决策 flag 构造，实现 RagSystem（评测 ablation 用）。"""
 
