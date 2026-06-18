@@ -1,4 +1,4 @@
-"""QaAgent 单测：检索工具（_search）+ run 流式桥接。
+"""QaAgent 单测：run 流式桥接与 sources 重置。
 
 FunctionAgent 是真实组件，不在单测范围——用 MockLLM 让其构造通过，run 测试
 用 fake agent 替身（产真 ToolCall/ToolCallResult 事件 + 可 await 的 final）。
@@ -21,10 +21,8 @@ class FakeRetriever:
 class FakeIndex:
     def __init__(self, nodes):
         self._nodes = nodes
-        self.last_kw = None
 
     def as_retriever(self, **kw):
-        self.last_kw = kw
         return FakeRetriever(self._nodes)
 
 
@@ -43,14 +41,6 @@ class FakeIndexManager:
 
     def get_index(self):
         return self._index
-
-
-class _Node:
-    def __init__(self, content):
-        self._c = content
-
-    def get_content(self):
-        return self._c
 
 
 class FakeCtx:
