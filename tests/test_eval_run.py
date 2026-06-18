@@ -103,3 +103,25 @@ async def test_score_row_carries_category_and_expected():
     )
     assert res["category"] == "other"                  # SUT 实际判的
     assert res["expected_category"] == "retrievable"   # 测试集金标准标注
+
+
+def test_aggregate_no_category_system_gives_na_accuracy():
+    # agent 路线：每行 category 空、但金标准 expected_category 非空
+    rows = [
+        {"outcome": "answered", "category": "", "expected_category": "retrievable"},
+        {"outcome": "answered", "category": "", "expected_category": "other"},
+    ]
+    rep = aggregate(rows)
+    assert rep["classification"]["accuracy"] is None
+    assert rep["classification"]["total"] == 0
+
+
+def test_aggregate_skips_blank_category_but_keeps_others():
+    # 混合：一行有 category（计分），一行空（跳过，不算误判）
+    rows = [
+        {"outcome": "answered", "category": "retrievable", "expected_category": "retrievable"},
+        {"outcome": "error", "category": "", "expected_category": "other"},
+    ]
+    rep = aggregate(rows)
+    assert rep["classification"]["total"] == 1
+    assert rep["classification"]["accuracy"] == 1.0

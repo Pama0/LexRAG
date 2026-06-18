@@ -70,7 +70,7 @@ def aggregate(rows: list[dict]) -> dict:
         if cat:
             cat_dist[cat] = cat_dist.get(cat, 0) + 1
         exp = r.get("expected_category")
-        if exp:
+        if exp and cat:  # 仅在系统确实产出类别时计分；agent(无 category) → N/A，error 行不算误判
             cls_total += 1
             cls_correct += int(cat == exp)
     answered = [r for r in rows if r.get("outcome") == "answered"]
