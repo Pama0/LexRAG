@@ -354,6 +354,32 @@ def test_format_probe_empty_and_nonempty():
     assert "共命中 1 段" in out and "《A》1.1" in out and "片段X" in out
 
 
+def test_format_probe_concentrated_reports_single_chapter():
+    """召回集中在同一书同一章 → 显式标注「跨 1 个章节」（有主导章，倾向 retrievable 的旁证）。"""
+    qa = _qa()
+    nodes = [
+        _PNode("锁的分类", book="MySQL", chapter="6.1 锁"),
+        _PNode("行级锁细节", book="MySQL", chapter="6.1 锁"),
+        _PNode("表级锁细节", book="MySQL", chapter="6.1 锁"),
+    ]
+    out = qa._format_probe(nodes, ["MySQL"])
+    assert "共命中 3 段" in out
+    assert "跨 1 个章节" in out
+
+
+def test_format_probe_scattered_reports_chapter_span():
+    """一句 query 已摊到多个互不重叠章节 → 「跨 3 个章节」（无主导章，支持 pending_split 的旁证）。"""
+    qa = _qa()
+    nodes = [
+        _PNode("索引优化", book="MySQL", chapter="5 索引"),
+        _PNode("查询优化", book="MySQL", chapter="7 查询"),
+        _PNode("配置调优", book="MySQL", chapter="9 配置"),
+    ]
+    out = qa._format_probe(nodes, ["MySQL"])
+    assert "共命中 3 段" in out
+    assert "跨 3 个章节" in out
+
+
 # ── rerank 接入 ───────────────────────────────────────────────────────
 class _RecordingReranker:
     """记录入参；把候选倒序后截 top_n（验证顺序确实被改 + 截断）。"""

@@ -121,7 +121,10 @@ class QaCapability:
                 n.get_content() if hasattr(n, "get_content") else getattr(n, "text", "")
             )[:150]
             lines.append(f"{i}. [{tag}] {content}")
-        return f"共命中 {len(nodes)} 段，分布：{'、'.join(dist)}\n" + "\n".join(lines)
+        return (
+            f"共命中 {len(nodes)} 段，跨 {len(dist)} 个章节：{'、'.join(dist)}\n"
+            + "\n".join(lines)
+        )
 
     # ── 分支：单轮检索 + 流式合成 ────────────────────────────────────
     async def retrieve(
