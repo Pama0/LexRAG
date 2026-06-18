@@ -61,12 +61,24 @@ VARIANTS = {
                                retriever="hybrid", reranker="bge-reranker-v2-m3"),
 }
 
+# agent 自主规划路线：另一个 SUT 类（非 flags 组合）。值置 None 作哨兵，
+# 既进默认全集 / CLI 可选名，又能在 build_sut 里按 None 分流。
+AGENT_VARIANT = "agent(自主规划)"
+VARIANTS[AGENT_VARIANT] = None
+
+
+def build_sut(name: str, index_manager, llm):
+    """按变体名构造被测系统：哨兵(None) → AgentSystem，否则 DocQueryWorkflowSystem(flags)。"""
+    from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem
+    if VARIANTS.get(name) is None:
+        return AgentSystem(index_manager, llm)
+    return DocQueryWorkflowSystem(index_manager, llm, flags=VARIANTS[name])
+
 
 async def _run_variants(testset_path, limit, names):
     from eval.config import CHROMA_DIR, make_eval_embeddings, make_eval_llm
     from eval.harness.metrics import build_metric_specs
     from eval.harness.run_eval import load_testset, score_row, aggregate
-    from eval.harness.sut import DocQueryWorkflowSystem
     from configs.embedding import configure_embedding
     from configs.llm import configure_llm
     from core.rag.data_loader import RAGIndexManager
@@ -83,7 +95,7 @@ async def _run_variants(testset_path, limit, names):
     variants = []
     detail = []  # 每条明细（带 variant 列），供 --detail 落盘
     for name in names:
-        sut = DocQueryWorkflowSystem(index_manager, sut_llm, flags=VARIANTS[name])
+        sut = build_sut(name, index_manager, sut_llm)
         scored = [await score_row(r, sut, metric_specs) for r in rows]
         for s in scored:
             detail.append({"variant": name, **s})
