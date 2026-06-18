@@ -128,6 +128,64 @@ def test_aggregate_skips_blank_category_but_keeps_others():
 
 
 # ── build_single_report：单系统 aggregate + 给每条打 variant 标（供 --detail 落盘）──
+def test_aggregate_cost_block_means_and_total():
+    rows = [
+        {"outcome": "answered", "latency_s": 1.0, "total_tokens": 100},
+        {"outcome": "answered", "latency_s": 3.0, "total_tokens": 300},
+    ]
+    rep = aggregate(rows)
+    assert rep["cost"]["mean_latency_s"] == 2.0
+    assert rep["cost"]["mean_total_tokens"] == 200
+    assert rep["cost"]["total_tokens"] == 400
+
+
+def test_aggregate_cost_no_tokens_gives_none():
+    # 未挂 meter：有 latency、无 token
+    rows = [{"outcome": "answered", "latency_s": 1.5}]
+    rep = aggregate(rows)
+    assert rep["cost"]["mean_latency_s"] == 1.5
+    assert rep["cost"]["mean_total_tokens"] is None
+    assert rep["cost"]["total_tokens"] is None
+
+
+class _FakeMeter:
+    def __init__(self, tokens):
+        self._tokens = tokens
+        self.reset_called = 0
+
+    def reset(self):
+        self.reset_called += 1
+
+    def read(self):
+        return self._tokens
+
+
+async def test_score_row_records_latency_without_meter():
+    out = RagOutput(response="A", retrieved_contexts=["c"], outcome="answered")
+    specs = [MetricSpec("faithfulness", _FakeMetric(0.9), lambda r, o: {})]
+    res = await score_row({"user_input": "Q", "reference": "R"}, _FakeSUT(out), specs)
+    assert isinstance(res["latency_s"], float) and res["latency_s"] >= 0
+    assert "total_tokens" not in res            # 没传 meter → 不带 token 键
+
+
+async def test_score_row_with_meter_records_tokens_and_resets():
+    out = RagOutput(response="A", retrieved_contexts=["c"], outcome="answered")
+    meter = _FakeMeter({"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120})
+    res = await score_row({"user_input": "Q", "reference": "R"}, _FakeSUT(out), [], meter=meter)
+    assert res["prompt_tokens"] == 100
+    assert res["completion_tokens"] == 20
+    assert res["total_tokens"] == 120
+    assert meter.reset_called == 1              # answer 前清零
+
+
+async def test_score_row_non_answered_still_records_latency_and_tokens():
+    out = RagOutput(response="", retrieved_contexts=[], outcome="error")
+    meter = _FakeMeter({"prompt_tokens": 5, "completion_tokens": 0, "total_tokens": 5})
+    res = await score_row({"user_input": "Q"}, _FakeSUT(out), [], meter=meter)
+    assert res["latency_s"] >= 0
+    assert res["total_tokens"] == 5            # error 行也记消耗
+
+
 def test_build_single_report_tags_variant_and_aggregates():
     scored = [
         {"outcome": "answered", "category": "retrievable", "expected_category": "retrievable",

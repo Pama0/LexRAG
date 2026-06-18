@@ -9,6 +9,7 @@ import json
 import argparse
 import asyncio
 import os
+from time import perf_counter
 
 from eval.harness.metrics import METRIC_NAMES, MetricSpec
 from eval.harness.report import (
@@ -44,8 +45,16 @@ def _row_to_dict(row) -> dict:
     return {k: getattr(row, k, None) for k in keys}
 
 
-async def score_row(row: dict, sut: RagSystem, metric_specs: list[MetricSpec]) -> dict:
+async def score_row(
+    row: dict, sut: RagSystem, metric_specs: list[MetricSpec], meter=None
+) -> dict:
+    # meter（可选）：测本条 SUT 的 token 消耗；reset 在 answer 前、read 在 answer 后
+    # judge 打分前——judge 用别的 llm 实例，不挂此 handler，不会污染计数。
+    if meter is not None:
+        meter.reset()
+    t0 = perf_counter()
     out: RagOutput = await sut.answer(row["user_input"])
+    latency_s = perf_counter() - t0
     base = {
         "user_input": row["user_input"],
         "reference": row.get("reference", ""),
@@ -54,7 +63,10 @@ async def score_row(row: dict, sut: RagSystem, metric_specs: list[MetricSpec]) -
         "category": out.category,                       # SUT 实际判的 category
         "expected_category": row.get("category", ""),   # 测试集金标准标注
         "num_contexts": len(out.retrieved_contexts),
+        "latency_s": round(latency_s, 3),
     }
+    if meter is not None:
+        base.update(meter.read())                       # prompt/completion/total_tokens
     if out.outcome != "answered":
         return base
     for spec in metric_specs:
@@ -87,6 +99,14 @@ def aggregate(rows: list[dict]) -> dict:
     for name in METRIC_NAMES:
         vals = [r[name] for r in answered if r.get(name) is not None]
         metric_means[name] = (sum(vals) / len(vals)) if vals else None
+    # 成本：时延对全行求均值（每行都跑了 answer）；token 仅对有计数的行（未挂 meter → None）
+    latencies = [r["latency_s"] for r in rows if r.get("latency_s") is not None]
+    token_vals = [r["total_tokens"] for r in rows if r.get("total_tokens") is not None]
+    cost = {
+        "mean_latency_s": (sum(latencies) / len(latencies)) if latencies else None,
+        "mean_total_tokens": (sum(token_vals) / len(token_vals)) if token_vals else None,
+        "total_tokens": sum(token_vals) if token_vals else None,
+    }
     return {
         "total": len(rows),
         "answered": len(answered),
@@ -98,6 +118,7 @@ def aggregate(rows: list[dict]) -> dict:
             "accuracy": (cls_correct / cls_total) if cls_total else None,
         },
         "metric_means": metric_means,
+        "cost": cost,
     }
 
 
