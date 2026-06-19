@@ -1,12 +1,14 @@
-# LibraryRAG — 技术书籍知识库助手（RAG 问答 + 评测驱动迭代）
-
+# LibraryRAG — 技术书籍知识库助手
 > 上传技术书籍 PDF，做可溯源的 RAG 问答；并配套一套量化评测体系，用数据驱动系统迭代。
 
-## 这是什么
+## LibraryRAG
 
 LibraryRAG 是一个技术书籍 / 文档的 AI 知识库助手：把书籍 PDF 解析入库，基于检索增强生成（RAG）回答书里的具体问题。当前已实现文档问答（QA），并按"从受限检索到开放推理"的能力光谱规划了学习计划、人生/决策支持等后续能力。
 
-它和一般 RAG demo 的区别在于：**不止"能问答"，而是带一套量化评测体系，能从评测数据反推出系统缺陷、定位根因、修复并再验证**——下面的「评测驱动迭代」就是一个完整的真实例子。
+## 为什么使用 LibraryRAG 
+LibraryRAG，通过为各种倾向的问题预设深度优化的工作流，使得能稳定地输出答案，并降低LLM的概率性。
+
+对比其他Agentic RAG系统，LibraryRAG做了严格的防幻觉并将大模型知识与rag数据源隔离开，令LibraryRAG可以忠于用户提供的，甚至是与大模型知识，外部流转的相悖的技术文档，知识来回答问题，而无需担忧多版本等干扰因素
 
 ## 架构概览
 
@@ -22,43 +24,12 @@ Layer 2  能力层：QA(workflow) / StudyPlan(workflow，规划中) / LifePlan(a
 
 > 完整产品愿景、分层依据与落地路径见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-## ⭐ 评测驱动迭代
+## 质量保障
 
-用 **ragas 的 5 个指标**（faithfulness / answer_relevancy / context_precision / context_recall / factual_correctness）+ **自定义分类准确率**，对"决策路由 RAG"做 **baseline vs 变体（ablation）** 对比，量化每个决策（probe / split / rerank / hybrid 等）的增益。被测 LLM 与评测 judge LLM 解耦，互不污染。
+LibraryRAG 配套一套量化评测体系：用 **ragas 5 指标 + 自定义分类准确率**对"决策路由 RAG"做 ablation 对比，能从评测数据反推系统缺陷、定位根因、修复并再验证（一个真实例子：评测发现库外问题被误判，由此引入 `out_of_scope` 分类）。
 
-### Ablation 对比表
-
-| 配置 | 分类准确率 | context_precision | context_recall | factual_correctness | faithfulness | answer_relevancy |
-|---|---|---|---|---|---|---|
-| baseline(全单轮) | 0.70 | 0.36 | 0.62 | 0.47 | 0.68 | 0.60 |
-| +probe | 0.61 (-0.09) | 0.36 (+0.00) | 0.58 (-0.04) | 0.44 (-0.02) | 0.71 (+0.03) | 0.59 (-0.01) |
-| +probe+split | 0.65 (-0.04) | 0.35 (-0.01) | 0.64 (+0.02) | 0.41 (-0.06) | 0.74 (+0.06) | 0.55 (-0.05) |
-| 全开 | 0.65 (-0.04) | 0.31 (-0.05) | 0.79 (+0.17) | 0.43 (-0.04) | 0.80 (+0.11) | 0.58 (-0.02) |
-| 全开+rerank | 0.65 (-0.04) | 0.55 (+0.19) | 0.82 (+0.20) | 0.45 (-0.02) | 0.79 (+0.10) | 0.59 (-0.01) |
-| 全开+hybrid | 0.65 (-0.04) | 0.31 (-0.05) | 0.84 (+0.22) | 0.40 (-0.06) | 0.79 (+0.10) | 0.55 (-0.05) |
-| 全开+hybrid+rerank | 0.57 (-0.13) | 0.52 (+0.16) | 0.78 (+0.15) | 0.51 (+0.05) | 0.89 (+0.20) | 0.53 (-0.07) |
-
-> 注：此表为 `out_of_scope` 分类引入**之前**的决策对比快照（分类准确率列基于当时的分类体系）。
-
-**读表结论**：检索侧增益最明确——rerank 把 context_precision 从 0.31 拉到 0.55，hybrid 把 context_recall 顶到 0.84，全开+hybrid+rerank 的 faithfulness 达 0.89、factual_correctness 0.51（均为全场最高）。而 probe/split 等决策链对**分类准确率**为负贡献，由此定位到下一个排查对象——见下面的 case study。
-
-### Case study：评测如何发现并修掉一个真实缺陷（out_of_scope）
-
-1. **现象**：ablation 表显示分类准确率被决策链拖低；逐条看明细，发现「PostgreSQL 的 MVCC 是怎么实现的？」这类问题被误判。
-2. **洞察**：直觉是"靠探测召回为空判断库外问题"，但这行不通——向量检索（ANN）只取最近邻、几乎从不返空，"召回为空"是个永不触发的死信号。库外问题的真实表现是"召回了 5 段最近邻、但内容全不相关"。
-3. **根因**：分类体系把"信息不足（该反问澄清）"和"库外（库里根本没有）"揉成了一类（`missing_info`），判据失效，库外问题要么被误判可检索、要么被无意义地反问。
-4. **解决**：新增独立的 `out_of_scope` 分类，判据锚定**召回片段与问题主体实体的相关性**（而非数量/空否）；命中时如实告知"知识库里暂无相关内容"，不反问、不硬答；`missing_info` 收窄回本义（信息不足才反问）；`out_of_scope` 最高优先级，解决"既信息不足又库外"的边界。
-5. **验证**：真实 LLM live smoke **7/7**（PostgreSQL / MongoDB / Oracle / Cassandra → out_of_scope，且控制项 retrievable / missing_info 不回归），单元测试 159 passed。
-
-> 设计与裁决细节见 [out_of_scope 设计文档](docs/superpowers/specs/2026-06-17-out-of-scope-classification-design.md)。
-
-### 诚实标注
-
-- 金标准集 golden 仅 **23 条**，属小样本、定性为主，**非统计显著**。
-- 评测 judge 是 **LLM 自评**（DeepSeek），存在 LLM-as-judge 的已知局限。
-- ablation 为**单次运行**，LLM 输出有方差；多次平均是后续方向。
-
-> 评测体系全景（数据集生成方法学、指标字段映射、脚本地图、已知问题）见 [docs/EVAL_OVERVIEW.md](docs/EVAL_OVERVIEW.md)。
+- 评测**驱动迭代**的过程（ablation 对比表 + case study + 诚实标注）见 [docs/EVAL_ITERATION.md](docs/EVAL_ITERATION.md)。
+- 评测**体系全景**（被测什么、指标字段、数据集生成、脚本地图、怎么跑）见 [docs/EVAL_OVERVIEW.md](docs/EVAL_OVERVIEW.md)。
 
 ## 快速开始
 
@@ -72,11 +43,9 @@ pip install -r requirements.txt
 
 python main.py                                   # CLI 对话
 python -m uvicorn api.main:app --port 8000       # Web 服务（前端对接）
-
-# 评测（需 DEEPSEEK_API_KEY）
-python -m eval.harness.compare --testset eval/dataset/golden.jsonl --limit 5   # 冒烟，确认链路通
-python -m eval.harness.compare --testset eval/dataset/golden.jsonl             # 全量 ablation（默认落盘 eval/results/）
 ```
+
+> 跑评测的命令见 [docs/EVAL_ITERATION.md](docs/EVAL_ITERATION.md#怎么复跑)。
 
 ## 技术栈
 
