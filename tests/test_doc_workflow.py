@@ -55,7 +55,7 @@ def _wf(llm, index_manager=None):
 
 # ── 全链路 dispatch 接线 ──────────────────────────────────────────────
 async def test_study_plan_intent_short_circuits_without_qa_preprocess():
-    llm = FakeLLM(['{"intent": "study_plan", "clean_query": "为Redis制定学习计划"}'])
+    llm = FakeLLM(['{"action": "dispatch_study_plan", "clean_query": "为Redis制定学习计划"}'])
     wf = _wf(llm)
     result = await wf.run(query="给我做份学Redis的计划", memory=FakeMemory())
     assert llm.calls == 1                       # 只有 Router 这一次
@@ -64,7 +64,7 @@ async def test_study_plan_intent_short_circuits_without_qa_preprocess():
 
 async def test_qa_intent_feeds_clean_query_and_scope_to_answer():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "MySQL索引有哪些"}',
+        '{"action": "dispatch_qa", "clean_query": "MySQL索引有哪些"}',
         '{"category": "retrievable", "rewritten_query": "MySQL索引有哪些"}',
     ])
     wf = _wf(llm)
@@ -90,7 +90,7 @@ async def test_qa_intent_feeds_clean_query_and_scope_to_answer():
 async def test_route_passes_selected_books_to_router():
     # 用户选中的书 scope 要喂给门口 Router，用于把"这本书"补全
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "《openclaw》讲了什么"}',
+        '{"action": "dispatch_qa", "clean_query": "《openclaw》讲了什么"}',
         '{"category": "retrievable", "rewritten_query": "《openclaw》讲了什么"}',
     ])
     wf = _wf(llm)
@@ -106,7 +106,7 @@ async def test_route_passes_selected_books_to_router():
 
 async def test_qa_preprocess_consumes_clean_query_not_original():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "MySQL索引有哪些"}',
+        '{"action": "dispatch_qa", "clean_query": "MySQL索引有哪些"}',
         '{"category": "retrievable", "rewritten_query": "MySQL索引有哪些"}',
     ])
     wf = _wf(llm)
@@ -143,7 +143,7 @@ async def test_router_parse_failure_defaults_to_qa_path():
 
 async def test_missing_info_clarifies_without_retrieval():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "这个索引的应用场景"}',
+        '{"action": "dispatch_qa", "clean_query": "这个索引的应用场景"}',
         '{"category": "missing_info", "rewritten_query": "这个索引的应用场景", "reason": "指代不明"}',
     ])
     wf = _wf(llm)
@@ -164,7 +164,7 @@ async def test_missing_info_clarifies_without_retrieval():
 # ── missing_info：自然反问 / 预算耗尽降级声明假设 ──────────────────────
 async def test_missing_info_uses_natural_clarify_question():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "这个索引的应用场景"}',
+        '{"action": "dispatch_qa", "clean_query": "这个索引的应用场景"}',
         '{"category": "missing_info", "rewritten_query": "这个索引的应用场景", "reason": "指代不明", "clarify_question": "你说的「这个索引」指哪一个？B+树还是全文索引？"}',
     ])
     wf = _wf(llm)
@@ -175,7 +175,7 @@ async def test_missing_info_uses_natural_clarify_question():
 async def test_other_category_answers_via_dedicated_branch():
     # other 不再与 retrievable/解析失败混走 fallback，而是独立分支（v1 暂仍单轮检索）
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "设计一个支持千万级并发的发号器"}',
+        '{"action": "dispatch_qa", "clean_query": "设计一个支持千万级并发的发号器"}',
         '{"category": "other", "rewritten_query": "设计一个支持千万级并发的发号器", "reason": "开放设计题"}',
     ])
     wf = _wf(llm)
@@ -196,7 +196,7 @@ async def test_other_category_answers_via_dedicated_branch():
 
 async def test_missing_info_budget_exhausted_assumes_and_answers():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "这个索引的应用场景"}',
+        '{"action": "dispatch_qa", "clean_query": "这个索引的应用场景"}',
         '{"category": "missing_info", "rewritten_query": "这个索引的应用场景", "reason": "指代不明"}',
     ])
     wf = _wf(llm)
@@ -220,7 +220,7 @@ async def test_missing_info_budget_exhausted_assumes_and_answers():
 
 async def test_other_dispatches_to_bounded_agent():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "对比 openclaw 的两种架构取舍"}',
+        '{"action": "dispatch_qa", "clean_query": "对比 openclaw 的两种架构取舍"}',
         '{"category": "other", "rewritten_query": "对比 openclaw 的两种架构取舍", "reason": "开放权衡"}',
     ])
     wf = _wf(llm)
@@ -243,7 +243,7 @@ async def test_other_dispatches_to_bounded_agent():
 
 async def test_other_falls_back_to_single_retrieve_when_agent_raises(caplog):
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "设计题"}',
+        '{"action": "dispatch_qa", "clean_query": "设计题"}',
         '{"category": "other", "rewritten_query": "设计题", "reason": "开放设计"}',
     ])
     wf = _wf(llm)
@@ -267,7 +267,7 @@ async def test_other_falls_back_to_single_retrieve_when_agent_raises(caplog):
 
 
 async def test_preprocess_passes_book_titles_to_classify():
-    llm = FakeLLM(['{"intent": "qa", "clean_query": "openclaw是什么"}'])  # 仅 Router 调 LLM
+    llm = FakeLLM(['{"action": "dispatch_qa", "clean_query": "openclaw是什么"}'])  # 仅 Router 调 LLM
     wf = _wf(llm)
 
     captured = {}
@@ -293,7 +293,7 @@ async def test_preprocess_passes_book_titles_to_classify():
 async def test_flags_off_degrade_branches_to_single_retrieve():
     # split flag 关 → pending_split 走单轮 retrieve（baseline 对比用）
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "讲讲MySQL"}',
+        '{"action": "dispatch_qa", "clean_query": "讲讲MySQL"}',
         '{"category": "pending_split", "rewritten_query": "讲讲MySQL", "reason": "需罗列"}',
     ])
     wf = DocQueryWorkflow(
@@ -319,7 +319,7 @@ async def test_flags_off_degrade_branches_to_single_retrieve():
 
 async def test_finalize_exposes_category_in_metadata():
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "MySQL锁"}',
+        '{"action": "dispatch_qa", "clean_query": "MySQL锁"}',
         '{"category": "retrievable", "rewritten_query": "MySQL锁"}',
     ])
     wf = _wf(llm)
@@ -330,12 +330,12 @@ async def test_finalize_exposes_category_in_metadata():
     wf.qa.retrieve = fake_retrieve
     result = await wf.run(query="MySQL锁", memory=FakeMemory())
     assert result.metadata.get("category") == "retrievable"
-    assert result.metadata.get("intent") == "qa"
+    assert result.metadata.get("action") == "dispatch_qa"
 
 
-async def test_chitchat_responds_without_retrieval_or_classify():
-    # "你好" → intent=chitchat → 门口直接友好回应，不进 preprocess/检索
-    llm = FakeLLM(['{"intent": "chitchat", "clean_query": "你好"}'])  # 仅 Router 调 LLM
+async def test_converse_responds_without_retrieval_or_classify():
+    # "你好" → action=converse → 门口直接回复，不进 preprocess/检索
+    llm = FakeLLM(['{"action": "converse", "reply": "你好！我是文档知识库助手～"}'])
     wf = _wf(llm)
     called = {"retrieve": False, "classify": False}
 
@@ -353,15 +353,15 @@ async def test_chitchat_responds_without_retrieval_or_classify():
 
     result = await wf.run(query="你好", memory=FakeMemory())
     assert called["retrieve"] is False
-    assert called["classify"] is False           # chitchat 门口拦截，不进 QA
+    assert called["classify"] is False           # converse 门口拦截，不进 QA
     assert "知识库助手" in str(result.response)
-    assert llm.calls == 1                         # 只有 Router 这一次
+    assert llm.calls == 1                         # 只有门口这一次
 
 
 async def test_out_of_scope_responds_without_retrieval_or_clarify():
     # 库外问题（PostgreSQL）→ out_of_scope → 固定话术，不检索/不反问
     llm = FakeLLM([
-        '{"intent": "qa", "clean_query": "PostgreSQL的MVCC是怎么实现的"}',
+        '{"action": "dispatch_qa", "clean_query": "PostgreSQL的MVCC是怎么实现的"}',
         '{"category": "out_of_scope", "rewritten_query": "PostgreSQL的MVCC是怎么实现的", "reason": "库外，召回片段均不相关"}',
     ])
     wf = _wf(llm)
@@ -399,10 +399,10 @@ def test_reranker_name_resolved_and_injected(monkeypatch):
     sentinel = object()
     import core.workflow.doc_workflow as mod
 
-    captured = {}
+    names = []
 
     def fake_make(name):
-        captured["name"] = name
+        names.append(name)   # 答案 + probe 各调一次
         return sentinel
 
     monkeypatch.setattr(mod, "make_reranker", fake_make)
@@ -410,7 +410,7 @@ def test_reranker_name_resolved_and_injected(monkeypatch):
     wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM(),
                           reranker="bge-reranker-v2-m3")
 
-    assert captured["name"] == "bge-reranker-v2-m3"
+    assert "bge-reranker-v2-m3" in names
     assert wf.qa.reranker is sentinel
 
 
@@ -426,16 +426,62 @@ def test_retriever_name_resolved_and_injected(monkeypatch):
     sentinel = object()
     import core.workflow.doc_workflow as mod
 
-    captured = {}
+    names = []
 
     def fake_make(name):
-        captured["name"] = name
+        names.append(name)   # 答案 + probe 各调一次
         return sentinel
 
     monkeypatch.setattr(mod, "make_retriever", fake_make)
 
     wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM(), retriever="hybrid")
 
-    assert captured["name"] == "hybrid"
+    assert "hybrid" in names
     assert wf.qa.retriever is sentinel
+
+
+# ── probe 检索解耦：独立 probe_retriever / probe_reranker 注入（装配单测）──
+def test_default_probe_uses_vector_retriever_and_no_reranker():
+    from core.retrieval.retrieve import VectorRetriever
+
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM())
+    assert isinstance(wf.qa.probe_retriever, VectorRetriever)
+    assert wf.qa.probe_reranker is None
+
+
+def test_probe_retriever_name_resolved_and_injected(monkeypatch):
+    import core.workflow.doc_workflow as mod
+
+    sentinels = {}
+
+    def fake_make(name):
+        s = object()
+        sentinels[name] = s
+        return s
+
+    monkeypatch.setattr(mod, "make_retriever", fake_make)
+
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM(),
+                          retriever="hybrid", probe_retriever="vector")
+
+    assert wf.qa.probe_retriever is sentinels["vector"]
+    assert wf.qa.retriever is sentinels["hybrid"]   # 答案侧仍独立解析
+
+
+def test_probe_reranker_name_resolved_and_injected(monkeypatch):
+    import core.workflow.doc_workflow as mod
+
+    sentinels = {}
+
+    def fake_make(name):
+        s = object()
+        sentinels[name] = s
+        return s
+
+    monkeypatch.setattr(mod, "make_reranker", fake_make)
+
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM(),
+                          probe_reranker="bge-reranker-v2-m3")
+
+    assert wf.qa.probe_reranker is sentinels["bge-reranker-v2-m3"]
 

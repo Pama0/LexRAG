@@ -36,7 +36,7 @@ from llama_index.core.workflow import (
     step,
 )
 
-from core.workflow.intent_router import IntentRouter
+from core.workflow.front_door import FrontDoorAgent
 from core.workflow.qa_capability import (  # noqa: F401  (事件类 re-export 供 api 层 import)
     AnswerDeltaEvent,
     QaCapability,
@@ -59,8 +59,11 @@ class StudyPlanEvent(Event):
     """intent=study_plan → 占位分支（v1 仅验证 dispatch 缝，能力后续实现）。"""
 
 
-class ChitchatEvent(Event):
-    """intent=chitchat → 寒暄/闲聊，门口直接友好回应，不进检索。"""
+class DirectReplyEvent(Event):
+    """converse / clarify → 门口直接回复（不检索/不分类）。"""
+
+    reply: str
+    action: str = ""
 
 
 class OutOfScopeEvent(Event):
@@ -133,6 +136,10 @@ class DocQueryWorkflow(Workflow):
         # reranker：检索后处理，None=基线无重排。retriever：检索数据源，None="vector"=向量基线。
         reranker: str | None = None,
         retriever: str | None = None,
+        # probe（探测召回判类）检索与答案检索解耦：默认 vector + 不重排（rerank 会收敛
+        # 召回、压扁 pending_split 依赖的章节 spread 信号）。eval 可显式给 probe 开 hybrid。
+        probe_retriever: str | None = None,
+        probe_reranker: str | None = None,
         probe_then_classify: bool = True,
         split_enabled: bool = True,
         assume_enabled: bool = True,
@@ -142,11 +149,13 @@ class DocQueryWorkflow(Workflow):
         super().__init__(**kw)
         # 门口 Router（消指代 + 规范化 + 意图分类）与 QA capability（降噪分类 + 检索合成）
         # 各自独立、各自可测。检索/合成实质逻辑全在 qa，本 workflow 只编排 + 委托。
-        self.router = IntentRouter(llm)
+        self.front_door = FrontDoorAgent(llm)
         self.qa = QaCapability(
             index_manager, llm, similarity_top_k, max_sub_queries,
             reranker=make_reranker(reranker),
             retriever=make_retriever(retriever),
+            probe_retriever=make_retriever(probe_retriever),  # None → VectorRetriever
+            probe_reranker=make_reranker(probe_reranker),     # None → None（不重排）
         )
         self.qa_agent = QaAgent(index_manager, llm, similarity_top_k, max_iterations=6)
         # 决策开关（评测 ablation 用；off → 对应分支降级单轮 retrieve、probe 关闭）
@@ -165,27 +174,28 @@ class DocQueryWorkflow(Workflow):
         await ctx.store.set("allow_clarify", getattr(ev, "allow_clarify", True))
         return RouteEvent()
 
-    # ── 门口 Router：读会话记忆消指代 + 规范化 → clean_query，再意图分类。 ──
+    # ── 门口准入决策：读会话记忆做净化 + 四出口决策，确定性 dispatch。 ──
     @step
     async def route(
         self, ctx: Context, ev: RouteEvent
-    ) -> "PreprocessEvent | StudyPlanEvent | ChitchatEvent":
+    ) -> "PreprocessEvent | StudyPlanEvent | DirectReplyEvent":
         original = await ctx.store.get("original_query")
         memory: Optional[ChatMemoryBuffer] = await ctx.store.get("memory")
         book_titles = await ctx.store.get("book_titles")
 
-        # 选中的书一并喂给门口，用于消解"这本书/本书"类指代
-        result = await self.router.run(original, memory, book_titles)
+        decision = await self.front_door.run(original, memory, book_titles)
 
-        # 工作态落 ctx：clean_query 是门口的横切产物；【绝不】写进会话记忆。
-        await ctx.store.set("clean_query", result.clean_query)
-        await ctx.store.set("intent", result.intent)
+        # 工作态落 ctx：action 供观测；clean_query 是门口横切产物，绝不写会话记忆。
+        await ctx.store.set("action", decision.action)
 
-        if result.intent == "study_plan":
+        if decision.action == "dispatch_study_plan":
+            await ctx.store.set("clean_query", decision.clean_query)
             return StudyPlanEvent()
-        if result.intent == "chitchat":
-            return ChitchatEvent()
-        return PreprocessEvent()  # qa（含降级）
+        if decision.action in ("converse", "clarify"):
+            return DirectReplyEvent(reply=decision.reply, action=decision.action)
+        # dispatch_qa（含降级）
+        await ctx.store.set("clean_query", decision.clean_query)
+        return PreprocessEvent()
 
     # ── QA 内部预处理：委托 QA capability 做降噪 + 难度分类，据 category dispatch。 ──
     @step
@@ -237,12 +247,11 @@ class DocQueryWorkflow(Workflow):
         )
 
     @step
-    async def chitchat_branch(self, ctx: Context, ev: ChitchatEvent) -> FinalizeEvent:
-        # 寒暄/闲聊：门口直接友好回应，不进 probe/检索（避免把"你好"当知识库查询）。
-        return FinalizeEvent(
-            answer="你好！我是文档知识库助手，可以问我已入库书籍/文档里的内容～",
-            source_nodes=[],
-        )
+    async def direct_reply_branch(
+        self, ctx: Context, ev: DirectReplyEvent
+    ) -> FinalizeEvent:
+        # converse/clarify：门口已生成面向用户的回复，直接收尾，不进 probe/检索。
+        return FinalizeEvent(answer=ev.reply, source_nodes=[])
 
     @step
     async def out_of_scope_branch(self, ctx: Context, ev: OutOfScopeEvent) -> FinalizeEvent:
@@ -323,7 +332,7 @@ class DocQueryWorkflow(Workflow):
         # 把 category/intent 附到结果 metadata，供评测算分类准确率/分支分布（api 不受影响）
         meta = {
             "category": await ctx.store.get("category", None),
-            "intent": await ctx.store.get("intent", None),
+            "action": await ctx.store.get("action", None),
         }
         return StopEvent(
             result=Response(
