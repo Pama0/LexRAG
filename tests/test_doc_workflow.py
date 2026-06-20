@@ -282,7 +282,7 @@ async def test_preprocess_passes_book_titles_to_classify():
         captured["clean"] = clean_query
         captured["books"] = book_titles
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     wf.qa.classify = fake_classify
 
@@ -352,7 +352,7 @@ async def test_converse_responds_without_retrieval_or_classify():
     async def fake_classify(clean_query, book_titles=None, probe=True):
         called["classify"] = True
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     wf.qa.retrieve = fake_retrieve
     wf.qa.classify = fake_classify
@@ -406,7 +406,7 @@ async def test_explain_intent_routes_to_explain_branch():
     async def fake_classify(clean_query, book_titles=None, probe=True):
         called["classify"] = True
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     wf.qa.gate = fake_gate
     wf.qa.explain = fake_explain

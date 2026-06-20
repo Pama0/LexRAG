@@ -35,7 +35,6 @@ async def test_run_denoises_and_marks_retrievable():
     result = await _pp(llm).run("MySQL有哪些锁")
     assert isinstance(result, PreprocessResult)
     assert result.category == "retrievable"
-    assert result.rewritten_query == "MySQL有哪些锁"
 
 
 async def test_run_classifies_pending_split():
@@ -65,7 +64,6 @@ async def test_run_falls_back_to_retrievable_on_parse_failure(caplog):
     with caplog.at_level(logging.WARNING):
         result = await _pp(llm).run("讲讲数据库")
     assert result.category == "retrievable"   # 解析失败 → 可检索，不阻塞
-    assert result.rewritten_query == "讲讲数据库"
     assert any("preprocess 解析失败" in r.getMessage() for r in caplog.records)  # 降级显形
 
 
@@ -74,7 +72,6 @@ async def test_run_rejects_invalid_category():
     llm = FakeLLM(['{"category": "clear", "rewritten_query": "x"}'])
     result = await _pp(llm).run("讲讲数据库")
     assert result.category == "retrievable"
-    assert result.rewritten_query == "讲讲数据库"
 
 
 async def test_run_prompt_has_no_history_section():

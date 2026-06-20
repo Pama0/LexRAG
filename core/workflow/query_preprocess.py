@@ -96,10 +96,9 @@ query：{query}"""
 
 @dataclass
 class PreprocessResult:
-    """QA 内部 step1 产出：category 决定 workflow 路由，rewritten_query 进检索。"""
+    """QA 内部 step1 产出：只判 category（降噪/rewritten_query 已上移到 QueryGate/Call A）。"""
 
     category: str
-    rewritten_query: str
     reason: str = ""
     clarify_question: str = ""
 
@@ -159,13 +158,12 @@ class QueryPreprocessor:
                 raise ValueError("empty content")
             # schema 校验交给 Pydantic（json_object 不保 schema，这步才是约束）
             judgment = QueryJudgment.model_validate_json(text)
-            rewritten = (judgment.rewritten_query or clean_query).strip() or clean_query
             result = PreprocessResult(
-                judgment.category, rewritten, judgment.reason, judgment.clarify_question
+                judgment.category, judgment.reason, judgment.clarify_question
             )
             logger.info("preprocess: category=%s reason=%s", result.category, result.reason)
             return result
         except Exception as exc:
             # 任何失败（空返回 / 非法 JSON / schema 不符 / 网络）都降级为可检索，绝不阻塞
             logger.warning("preprocess 解析失败，降级 retrievable：%s", exc)
-            return PreprocessResult("retrievable", clean_query, "")
+            return PreprocessResult("retrievable")

@@ -324,7 +324,7 @@ async def test_classify_probes_then_passes_context_to_preprocessor():
     async def fake_run(clean_query, retrieval_context=""):
         captured["ctx"] = retrieval_context
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     qa.preprocessor.run = fake_run
     await qa.classify("给我讲明白openclaw", ["openclaw"])
@@ -339,7 +339,7 @@ async def test_classify_degrades_when_probe_fails():
     async def fake_run(clean_query, retrieval_context=""):
         captured["ctx"] = retrieval_context
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     qa.preprocessor.run = fake_run
     result = await qa.classify("openclaw", ["openclaw"])
@@ -468,7 +468,7 @@ async def test_probe_retriever_defaults_to_vector_and_no_reranker():
 async def _run_classify(qa, query="openclaw", books=None):
     async def fake_run(clean_query, retrieval_context=""):
         from core.workflow.query_preprocess import PreprocessResult
-        return PreprocessResult("retrievable", clean_query)
+        return PreprocessResult("retrievable")
 
     qa.preprocessor.run = fake_run
     return await qa.classify(query, books or ["openclaw"])
