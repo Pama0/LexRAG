@@ -504,7 +504,8 @@ def test_probe_retriever_name_resolved_and_injected(monkeypatch):
                           retriever="hybrid", probe_retriever="vector")
 
     assert wf.qa.probe_retriever is sentinels["vector"]
-    assert wf.qa.retriever is sentinels["hybrid"]   # 答案侧仍独立解析
+    assert wf.qa.retriever is sentinels["hybrid"]            # 答案侧仍独立解析
+    assert wf.qa.explain_retriever is sentinels["hybrid"]   # explain 宽召回默认 hybrid
 
 
 def test_probe_reranker_name_resolved_and_injected(monkeypatch):

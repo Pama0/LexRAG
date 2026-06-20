@@ -366,6 +366,7 @@ class DocQueryWorkflow(Workflow):
         meta = {
             "category": await ctx.store.get("category", None),
             "action": await ctx.store.get("action", None),
+            "intent": await ctx.store.get("intent", None),  # explain/other：供 eval 区分 explain 路径
         }
         return StopEvent(
             result=Response(
