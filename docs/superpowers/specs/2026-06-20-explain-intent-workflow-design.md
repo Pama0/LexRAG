@@ -21,7 +21,7 @@
 ## Goals / Non-goals
 
 **Goals**
-- 新增 `IntentClassifier`（Call A）：检索降噪 + 意图二判，取代 `QueryPreprocessor` 的降噪步。
+- 新增 `QueryGate`（Call A）：检索降噪 + 意图二判，取代 `QueryPreprocessor` 的降噪步。
 - `QueryPreprocessor`（Call B）瘦身为**只做难度六分类**（分类逻辑不动），收已降噪 query。
 - `explain` 走独立工作流：宽 hybrid 覆盖召回 → `AnswerOutliner` 列概念骨架 → 每节点检索+去重
   → 教学体合成（开场全景 / 逐节接地 / 收束）。
@@ -42,15 +42,15 @@
 
 | 组件 | 职责 | 接口 | 来源 |
 |---|---|---|---|
-| `IntentClassifier`（新，Call A） | 检索降噪 + 意图二判 | `run(clean_query) -> (denoised_query, intent)` | 抽 `QueryPreprocessor` 的降噪步 + 加意图 |
+| `QueryGate`（新，Call A） | 检索降噪 + 意图二判 | `run(clean_query) -> (denoised_query, intent)` | 抽 `QueryPreprocessor` 的降噪步 + 加意图 |
 | `QueryPreprocessor`（瘦身，Call B） | 只做难度六分类 | `run(denoised_query, retrieval_ctx) -> (category, reason, clarify_question)` | 去掉降噪步；不再回 `rewritten_query` |
 | `AnswerOutliner`（新） | 据宽召回列概念骨架 | `run(denoised_query, passages) -> sub_queries: list[str]` | 全新 |
 
 - `intent` 取值（v1）：`"explain" | "other"`（`other` = 非explain，沿用现有难度分类路径）。
-- `IntentClassifier` 判意图**不需检索**（意图是答案形状、从问题本身判）。
-- 命名：Call A 定为 `IntentClassifier`（降噪是其第一步，主新职是意图）。
+- `QueryGate` 判意图**不需检索**（意图是答案形状、从问题本身判）。
+- 命名：Call A 定为 `QueryGate`（降噪是其第一步，主新职是意图）。
 
-### IntentClassifier 判据（prompt 要点）
+### QueryGate 判据（prompt 要点）
 - explain：用户要"理解/讲清楚/讲透一个概念或主题"（"什么是X""讲讲X""讲懂X""X的原理"）。
 - other（非explain）：查具体事实、对比、设计、操作步骤等——交给难度分类按现有路径处理。
 - 降级：解析失败/空 → `("other", clean_query)`（落已验证的存量路径，最安全）。
@@ -68,7 +68,7 @@
 route(front_door) → PreprocessEvent
         ↓
 preprocess step:
-  1. Call A: qa.gate(clean_query) → (denoised_query, intent)   # IntentClassifier
+  1. Call A: qa.gate(clean_query) → (denoised_query, intent)   # QueryGate
      ctx.store: rewritten_query = denoised_query                # 取代原 rewritten_query 来源
   2. intent == "explain" → ExplainEvent → explain_branch → qa.explain(...)
   3. else → Call B: qa.classify(denoised_query) → category
@@ -77,7 +77,7 @@ preprocess step:
 
 **新增**：
 - `ExplainEvent`（Event）+ `explain_branch`（step，消费 → `FinalizeEvent`，薄委托 `qa.explain`）。
-- `qa.gate()`：包 `IntentClassifier`。`qa.explain()`：新能力方法（与 `split/assume/retrieve` 平级）。
+- `qa.gate()`：包 `QueryGate`。`qa.explain()`：新能力方法（与 `split/assume/retrieve` 平级）。
 
 **对存量的触碰（本刀最需小心处）**：
 - 降噪从 `QueryPreprocessor` 上移到 Call A → **降噪后的检索 query（原 `rewritten_query`）改由
@@ -114,7 +114,7 @@ qa.explain(ctx, denoised_query, book_titles):
 
 | 触发 | 落点 |
 |---|---|
-| `IntentClassifier` 解析失败/空 | 默认 `other` + 原 query → 难度分类（存量路径） |
+| `QueryGate` 解析失败/空 | 默认 `other` + 原 query → 难度分类（存量路径） |
 | `AnswerOutliner` 空骨架/失败 | **`qa_agent` 多轮探索**（复用 other_branch 的有界 QaAgent，记日志） |
 | `qa_agent` 再抛错 | 单轮检索 + 教学体合成整句（最终地板） |
 | 某骨架节点召回空 | 略过该节 |
@@ -124,7 +124,7 @@ qa.explain(ctx, denoised_query, book_titles):
 
 ## 测试（mock LLM，沿用现有模式，只验解析/接线/降级，不验真 LLM 判断质量）
 
-- `IntentClassifier`：降噪+意图解析；explain / other 出口；降级默认 `other` + 原 query。
+- `QueryGate`：降噪+意图解析；explain / other 出口；降级默认 `other` + 原 query。
 - `AnswerOutliner`：骨架解析（含尺寸 1 节 / 多节）；空列表/解析失败 → 空（降级信号）。
 - `QueryPreprocessor`：瘦身后仍按 denoised_query 出六分类；不再回 rewritten_query（更新相关断言）。
 - `qa.explain`：stub outliner+检索，验"宽召回→列骨架→扇出→教学体三段"接线；空骨架→落 agent；
@@ -139,7 +139,8 @@ qa.explain(ctx, denoised_query, book_titles):
 - **教学体合成的 synthesize 整合模式**：v1 逐节分节；需跨节整合的概念暂靠开场全景串，不做专门整合。
 - **评测**：golden 加 explain 样例 + "是否真讲透彻"的度量。
 
-## 命名待评审时定
+## 命名（已定）
 
-- Call A：`IntentClassifier`（倾向）。若嫌"只是 intent"名不副实（它也降噪），备选 `QueryGate`。
-- 新能力方法 `qa.explain` / 新事件 `ExplainEvent` / 新组件 `AnswerOutliner`：随评审。
+- Call A 组件：`QueryGate`（降噪 + 意图二判；"门"贴它"先过一道闸再分流"的角色）。
+- 意图取值：`"explain" | "other"`（`other` 复用现有非explain 路径）。
+- 新能力方法 `qa.explain` / 新事件 `ExplainEvent` / 新组件 `AnswerOutliner` / qa 包装方法 `qa.gate`。
