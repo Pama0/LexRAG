@@ -255,9 +255,13 @@ class DocQueryWorkflow(Workflow):
 
     @step
     async def out_of_scope_branch(self, ctx: Context, ev: OutOfScopeEvent) -> FinalizeEvent:
-        # 库外：探测召回片段与问题主题无关 → 如实告知，不检索/不合成/不反问。
+        # 库外：探测召回片段与问题主题无关 → 对话式转场，友好告知 + 邀请换问法，不检索/不反问。
         return FinalizeEvent(
-            answer="知识库里暂无与该问题相关的内容。", source_nodes=[]
+            answer=(
+                "这个问题知识库里暂未收录相关内容，我没法基于现有资料回答。"
+                "你可以换个已入库主题问我，或把问题换个角度再试试～"
+            ),
+            source_nodes=[],
         )
 
     @step

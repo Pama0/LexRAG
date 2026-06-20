@@ -376,7 +376,9 @@ async def test_out_of_scope_responds_without_retrieval_or_clarify():
 
     result = await wf.run(query="PostgreSQL的MVCC是怎么实现的", memory=FakeMemory())
     assert called["retrieve"] is False                 # 库外不检索
-    assert str(result.response) == "知识库里暂无与该问题相关的内容。"  # 固定话术（精确）
+    # 对话式转场：友好告知库外 + 邀请换个问法（不再机械精确话术）
+    resp = str(result.response)
+    assert "知识库" in resp and ("暂" in resp or "没有" in resp or "未收录" in resp)
     assert result.source_nodes == []
     assert result.metadata.get("category") == "out_of_scope"  # 分类回流 metadata
 
