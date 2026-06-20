@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <header class="header">
-      <h1>BookKB</h1>
+      <h1>LibraryRAG</h1>
       <span class="subtitle">书籍知识库助手</span>
       <nav class="nav">
         <button :class="{ active: view === 'chat' }" @click="view = 'chat'">问答</button>

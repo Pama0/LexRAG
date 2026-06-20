@@ -1,4 +1,4 @@
-# BookKB 一键启动：后端 (FastAPI:8000) + 前端 (Vite:5173)
+# LibraryRAG 一键启动：后端 (FastAPI:8000) + 前端 (Vite:5173)
 # 用法：.\start.ps1            正常启动
 #       .\start.ps1 -Install   先装/更新依赖再启动
 

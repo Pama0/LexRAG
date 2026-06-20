@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-LLM 学习/实验项目，技术书籍知识库助手（上传 PDF + RAG 问答）。底层 LLM 为 DeepSeek（`OpenAILike` 接入，已关 thinking，见 `configs/llm.py`）；评测侧（`eval/`）刻意沿用智谱 GLM，与被测系统解耦。
+LibraryRAG —— LLM 学习/实验项目，技术书籍知识库助手（上传 PDF + RAG 问答）。底层 LLM 为 DeepSeek（`OpenAILike` 接入，已关 thinking，见 `configs/llm.py`）；评测侧（`eval/`）刻意沿用智谱 GLM，与被测系统解耦。
 
 ## Environment
 

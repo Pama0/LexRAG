@@ -61,7 +61,7 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="BookKB - 书籍知识库助手", version="0.1.0", lifespan=_lifespan)
+    app = FastAPI(title="LibraryRAG - 书籍知识库助手", version="0.1.0", lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,
