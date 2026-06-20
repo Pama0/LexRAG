@@ -21,6 +21,13 @@ from eval.harness.sut import RagOutput, RagSystem
 
 SINGLE_SYSTEM_LABEL = "当前系统(默认flags)"
 
+# 「拒答类」金标准：正确行为是反问澄清 / 告知库外，而非给出可被 ragas 打分的答案。
+# ragas 答案质量指标（faithfulness/answer_relevancy/...）对这两类无意义——workflow 把它们
+# 短路成 empty（本就不计分），但无路由的 agent 会硬答并被照常打分，拉低均值且口径不一致。
+# 故按金标准 expected_category 统一把这两类的指标归 null（对所有被测系统一致），
+# 拒答是否正确改由分类准确率衡量。
+REFUSE_CATEGORIES = frozenset({"missing_info", "out_of_scope"})
+
 
 def load_testset(path: str) -> list[dict]:
     rows: list[dict] = []
@@ -67,7 +74,9 @@ async def score_row(
     }
     if meter is not None:
         base.update(meter.read())                       # prompt/completion/total_tokens
-    if out.outcome != "answered":
+    # 非 answered（empty/error）不打分；拒答类金标准（missing_info/out_of_scope）即便被硬答
+    # 也不打分——指标归 null，仅由分类准确率衡量拒答是否正确。
+    if out.outcome != "answered" or base["expected_category"] in REFUSE_CATEGORIES:
         return base
     for spec in metric_specs:
         try:

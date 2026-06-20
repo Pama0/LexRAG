@@ -81,6 +81,29 @@ async def test_score_row_non_answered_skips_metrics():
     assert "faithfulness" not in res
 
 
+async def test_score_row_refuse_category_skips_metrics_even_if_answered():
+    # agent 无路由、硬答了一道 out_of_scope 题：answered 但金标准是 refuse 类
+    # → ragas 指标归 null（不计算），避免「拒答题被当答题打分」拉低答案质量均值。
+    out = RagOutput(response="编造的 PG 答案", retrieved_contexts=["c"], outcome="answered")
+    specs = [MetricSpec("faithfulness", _FakeMetric(0.0), lambda r, o: {})]
+    res = await score_row(
+        {"user_input": "Q", "reference": "", "category": "out_of_scope"}, _FakeSUT(out), specs
+    )
+    assert res["outcome"] == "answered"          # 仍如实记录 SUT 确实答了
+    assert res["expected_category"] == "out_of_scope"
+    assert "faithfulness" not in res             # 但指标归 null
+    assert res["latency_s"] >= 0                 # 成本仍记
+
+
+async def test_score_row_missing_info_category_skips_metrics():
+    out = RagOutput(response="瞎猜的答案", retrieved_contexts=["c"], outcome="answered")
+    specs = [MetricSpec("answer_relevancy", _FakeMetric(0.4), lambda r, o: {})]
+    res = await score_row(
+        {"user_input": "Q", "category": "missing_info"}, _FakeSUT(out), specs
+    )
+    assert "answer_relevancy" not in res
+
+
 # ── 分类准确率 / category 分布 ──
 def test_aggregate_classification_accuracy_and_distribution():
     rows = [
