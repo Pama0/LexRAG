@@ -87,8 +87,12 @@ class QueryDecomposer:
             data = Decomposition.model_validate_json(text)
             subs = [s.strip() for s in data.sub_queries if s and s.strip()]
             mode = data.mode if data.mode in ("list", "synthesize") else "list"
-            logger.info("decompose: 拆出 %d 个子查询 mode=%s", len(subs[:max_items]), mode)
-            return subs[:max_items], mode
+            kept = subs[:max_items]
+            logger.info(
+                "decompose: 拆出 %d 个子查询 mode=%s：%s",
+                len(kept), mode, " | ".join(kept),
+            )
+            return kept, mode
         except Exception as exc:
             # 任何失败都返回空，交由 split_branch 降级为单轮检索，绝不阻塞
             logger.warning("decompose 失败，返回空（split 将降级单轮）：%s", exc)
