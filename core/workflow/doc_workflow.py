@@ -263,6 +263,13 @@ class DocQueryWorkflow(Workflow):
             case _:  # retrievable / 解析失败 fallback
                 return RetrieveAgentEvent(rewritten_query=rewritten)
 
+    async def _scope_prefix(self, ctx: Context) -> str:
+        """全库收窄的透明声明：流式先推一个 delta，并返回前缀供拼进最终答案。空则无副作用。"""
+        note = await ctx.store.get("scope_note", "")
+        if note:
+            ctx.write_event_to_stream(AnswerDeltaEvent(delta=note))
+        return note
+
     # ── 分支：dispatch 到 QA capability（薄委托），各分支统一收成 FinalizeEvent ──
     @step
     async def study_plan_branch(self, ctx: Context, ev: StudyPlanEvent) -> FinalizeEvent:
@@ -310,15 +317,19 @@ class DocQueryWorkflow(Workflow):
             except Exception as exc:
                 logger.warning("explain agent 兜底失败，降级单轮：%s", exc)
                 answer, nodes = await self.qa.retrieve(ctx, rewritten, book_titles)
-        return FinalizeEvent(answer=answer, source_nodes=nodes)
+            prefix = await self._scope_prefix(ctx)
+            return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
+        prefix = await self._scope_prefix(ctx)
+        return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
 
     @step
     async def retrieve_branch(self, ctx: Context, ev: RetrieveAgentEvent) -> FinalizeEvent:
         book_titles = await ctx.store.get("book_titles")
+        prefix = await self._scope_prefix(ctx)
         answer, nodes = await self.qa.retrieve(
             ctx, ev.rewritten_query, book_titles, ev.assumption_note
         )
-        return FinalizeEvent(answer=answer, source_nodes=nodes)
+        return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
 
     @step
     async def other_branch(self, ctx: Context, ev: OtherEvent) -> FinalizeEvent:
@@ -327,9 +338,10 @@ class DocQueryWorkflow(Workflow):
         agent 异常 → 降级单轮检索，绝不让 other 比单轮更脆。
         """
         book_titles = await ctx.store.get("book_titles")
+        prefix = await self._scope_prefix(ctx)
         if not self._other_agent_enabled:
             answer, nodes = await self.qa.retrieve(ctx, ev.rewritten_query, book_titles)
-            return FinalizeEvent(answer=answer, source_nodes=nodes)
+            return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
         try:
             answer, nodes = await self.qa_agent.run(
                 ctx, ev.rewritten_query, book_titles
@@ -339,25 +351,27 @@ class DocQueryWorkflow(Workflow):
             answer, nodes = await self.qa.retrieve(
                 ctx, ev.rewritten_query, book_titles
             )
-        return FinalizeEvent(answer=answer, source_nodes=nodes)
+        return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
 
     @step
     async def split_branch(self, ctx: Context, ev: SplitEvent) -> FinalizeEvent:
         book_titles = await ctx.store.get("book_titles")
+        prefix = await self._scope_prefix(ctx)
         if self._split_enabled:
             answer, nodes = await self.qa.split(ctx, ev.rewritten_query, book_titles)
         else:
             answer, nodes = await self.qa.retrieve(ctx, ev.rewritten_query, book_titles)
-        return FinalizeEvent(answer=answer, source_nodes=nodes)
+        return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
 
     @step
     async def assume_branch(self, ctx: Context, ev: AssumeEvent) -> FinalizeEvent:
         book_titles = await ctx.store.get("book_titles")
+        prefix = await self._scope_prefix(ctx)
         if self._assume_enabled:
             answer, nodes = await self.qa.assume(ctx, ev.rewritten_query, book_titles)
         else:
             answer, nodes = await self.qa.retrieve(ctx, ev.rewritten_query, book_titles)
-        return FinalizeEvent(answer=answer, source_nodes=nodes)
+        return FinalizeEvent(answer=prefix + answer, source_nodes=nodes)
 
     # ── 反问：本轮终止，把反问句作为答案，由 finalize 写回记忆等用户补充 ──
     @step
