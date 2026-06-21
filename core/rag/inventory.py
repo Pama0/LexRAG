@@ -2,7 +2,7 @@
 
 front_door 的 converse 路径（元查询"库里有什么/有 X 吗/多少本"）与
 ListBooksTool（QaAgent 工具）共用此函数，避免 core/workflow → core/agent.tools
-的模块循环（agent 已依赖 workflow.qa_capability）。
+的模块循环（core/agent/qa_agent.py 与 auto_agent.py 已依赖 core/workflow/qa_capability.py）。
 """
 
 
@@ -20,34 +20,34 @@ def _collect_titles(index_manager) -> list[str]:
 
 def list_books_text(
     index_manager,
-    filter: str = "",
+    title_filter: str = "",
     count_only: bool = False,
 ) -> str:
     """聚合库藏书单为人读文本。
 
-    - filter：大小写不敏感子串匹配 book_title；空串 = 全量。
+    - title_filter：大小写不敏感子串匹配 book_title；空串 = 全量。
     - count_only：True → 只回计数；False → 列出每本书 + 块数。
     """
     titles = _collect_titles(index_manager)
-    if filter:
-        fl = filter.lower()
+    if title_filter:
+        fl = title_filter.lower()
         titles = [t for t in titles if fl in t.lower()]
 
     if count_only:
-        if not titles and filter:
-            return f"没有匹配「{filter}」的书。"
+        if not titles and title_filter:
+            return f"没有匹配「{title_filter}」的书。"
         if not titles:
             return "知识库当前为空。"
-        if filter:
+        if title_filter:
             # 去重计数：同一书名只算 1 本
             n = len(set(titles))
-            return f"匹配「{filter}」的书有 {n} 本。"
+            return f"匹配「{title_filter}」的书有 {n} 本。"
         n = len(set(titles))
         return f"已入库 {n} 本。"
 
     # 列表形式
-    if not titles and filter:
-        return f"没有匹配「{filter}」的书籍。"
+    if not titles and title_filter:
+        return f"没有匹配「{title_filter}」的书籍。"
     if not titles:
         return "知识库当前为空。"
 
@@ -55,6 +55,6 @@ def list_books_text(
     counts: dict[str, int] = {}
     for t in titles:
         counts[t] = counts.get(t, 0) + 1
-    head = f"匹配「{filter}」的书籍：" if filter else "已入库书籍："
+    head = f"匹配「{title_filter}」的书籍：" if title_filter else "已入库书籍："
     lines = [f"- 《{t}》（{c} 块）" for t, c in sorted(counts.items())]
     return head + "\n" + "\n".join(lines)

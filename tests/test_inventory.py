@@ -31,7 +31,7 @@ def test_full_list_counts_and_sorts_titles():
 
 def test_filter_case_insensitive_substring_match():
     metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}, {"book_title": "MySQL实战"}]
-    out = list_books_text(_FakeIndexManager(metas), filter="mysql")
+    out = list_books_text(_FakeIndexManager(metas), title_filter="mysql")
     assert "匹配「mysql」的书籍：" in out
     assert "《高性能MySQL》" in out
     assert "《MySQL实战》" in out
@@ -40,7 +40,7 @@ def test_filter_case_insensitive_substring_match():
 
 def test_filter_no_match_returns_no_match_message():
     metas = [{"book_title": "MySQL"}]
-    out = list_books_text(_FakeIndexManager(metas), filter="oracle")
+    out = list_books_text(_FakeIndexManager(metas), title_filter="oracle")
     assert out == "没有匹配「oracle」的书籍。"
 
 
@@ -55,20 +55,20 @@ def test_count_only_empty_returns_empty_message():
 
 def test_count_only_with_filter_returns_match_count():
     metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}, {"book_title": "MySQL实战"}]
-    out = list_books_text(_FakeIndexManager(metas), filter="mysql", count_only=True)
+    out = list_books_text(_FakeIndexManager(metas), title_filter="mysql", count_only=True)
     assert out == "匹配「mysql」的书有 2 本。"
 
 
 def test_count_only_with_filter_no_match():
     metas = [{"book_title": "MySQL"}]
-    out = list_books_text(_FakeIndexManager(metas), filter="oracle", count_only=True)
+    out = list_books_text(_FakeIndexManager(metas), title_filter="oracle", count_only=True)
     assert out == "没有匹配「oracle」的书。"
 
 
 def test_filter_empty_string_is_full_list_not_match():
-    # filter="" 应等同全量，不是"匹配空串"
+    # title_filter="" 应等同全量，不是"匹配空串"
     metas = [{"book_title": "甲"}]
-    out = list_books_text(_FakeIndexManager(metas), filter="")
+    out = list_books_text(_FakeIndexManager(metas), title_filter="")
     assert "已入库书籍：" in out
     assert "匹配" not in out
 

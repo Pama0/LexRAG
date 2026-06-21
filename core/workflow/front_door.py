@@ -217,7 +217,7 @@ class FrontDoorAgent:
             logger.warning("front_door list_books 查询失败，用占位文本：%s", exc)
             tool_result = "（未能读取库藏清单）"
         logger.info(
-            "front_door: action=converse tool=list_books filter=%r count_only=%s",
+            "front_door: action=converse tool=list_books title_filter=%r count_only=%s",
             d.tool_filter, d.tool_count_only,
         )
         return await self._compose_tool_reply(original, tool_result)
