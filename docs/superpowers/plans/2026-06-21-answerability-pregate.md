@@ -725,7 +725,7 @@ Expected: 全绿。`test_doc_workflow.py` 的 13 个测试已由 Step 1b 改为 
 - [ ] **Step 7: 提交**
 
 ```powershell
-git add core/workflow/qa_capability.py tests/test_qa_capability.py
+git add core/workflow/qa_capability.py tests/test_qa_capability.py tests/test_doc_workflow.py
 git commit -m "feat: wire Admitter into qa.classify (probe → admit → preprocessor)
 
 admit 吃 probe 证据判可答性；非 ok 短路返回 out_of_scope/missing_info，
