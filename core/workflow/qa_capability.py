@@ -37,6 +37,24 @@ from core.workflow.answer_outliner import AnswerOutliner
 
 logger = logging.getLogger(__name__)
 
+# explain 整合教学写作的讲师 prompt（用 .replace 注入，避免 JSON/花括号被 str.format 误解）
+_TEACH_PROMPT = """你是一位讲师，要把"{query}"讲清楚、讲透。下面给你一份讲解骨架（要讲的几个维度，按顺序）和一批从知识库检索到的资料片段。请据此写一篇连贯的讲解。
+
+写作要求：
+- 像老师讲课：先用一段话开场，点出这个主题整体是什么、要从哪几个方面讲；然后按骨架分节展开；最后一两句收束。
+- 分节用轻量小标题：每个维度一个「## 维度名」小标题，只写骨架里列出的维度；节与节之间要有承接，不要各写各的。
+- 【做减法、选高度】你是讲师不是资料堆砌机：只讲帮助理解主题的内容；资料片段里与当前维度无关的零碎细节（具体字段名、内部常量等）一律略去，除非它直接支撑某个维度的论点。
+
+铁律（grounding，不可违反）：
+- 事实只能来自下面的【资料片段】，严禁用你自己的训练知识或常识补充片段里没有的事实。
+- 片段没覆盖到的维度，如实说"资料中未涉及"，不要编造。
+
+讲解骨架（按此顺序分节）：
+{plan}
+
+资料片段：
+{passages}"""
+
 
 class EmptySkeleton(Exception):
     """AnswerOutliner 列不出骨架 → 由 explain_branch 落 agent 兜底。"""
@@ -451,4 +469,34 @@ class QaCapability:
         async for token in self._stream_tokens(query, nodes):
             parts.append(token)
             ctx.write_event_to_stream(AnswerDeltaEvent(delta=token))
+        return "".join(parts)
+
+    async def _teach_tokens(self, prompt: str):
+        """讲师整合写作的 token 源：直接对 prompt 流式 complete。单独成方法便于单测替身。"""
+        handle = await self.llm.astream_complete(prompt)
+        async for chunk in handle:
+            yield chunk.delta or ""
+
+    async def _teach_synthesize(
+        self, ctx: Context, query: str, outline: list, pool: list
+    ) -> str:
+        """教案(维度顺序) + 截断后的 pool → 讲师 prompt → 一次流式整合写作。
+
+        结构来自教案（教学先验/TOC，安全元知识）；事实只来自 pool 片段（prompt 立铁律）。
+        逐 token 发 AnswerDeltaEvent，前端零改动。
+        """
+        plan = "\n".join(f"- {d.label}：{d.query}" for d in outline)
+        passages = "\n---\n".join(
+            (n.get_content() if hasattr(n, "get_content") else getattr(n, "text", ""))
+            for n in pool
+        )
+        prompt = (
+            _TEACH_PROMPT.replace("{query}", query)
+            .replace("{plan}", plan)
+            .replace("{passages}", passages or "（无）")
+        )
+        parts: list[str] = []
+        async for tok in self._teach_tokens(prompt):
+            parts.append(tok)
+            ctx.write_event_to_stream(AnswerDeltaEvent(delta=tok))
         return "".join(parts)

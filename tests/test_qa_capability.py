@@ -3,7 +3,7 @@
 从 DocQueryWorkflow 抽出后，QA 的检索/合成实质逻辑在此独立测，不经 workflow
 step 机制。真实合成（LLM）/真实 chroma 不在范围，stub 掉检索 / token 源 / 拆解。
 """
-from core.workflow.qa_capability import QaCapability
+from core.workflow.qa_capability import QaCapability, AnswerDeltaEvent
 from core.workflow.query_dimension import Dimension
 
 
@@ -729,3 +729,62 @@ async def test_gate_delegates_to_query_gate():
     qa._gate.run = fake_run
     denoised, intent = await qa.gate("原始 query")
     assert (denoised, intent) == ("降噪后", "explain")
+
+
+# ── _teach_synthesize：教案 + pool → 一次整合教学写作 ──────────────────
+class _TeachChunk:
+    def __init__(self, delta):
+        self.delta = delta
+
+
+class FakeStreamLLM:
+    """暴露 astream_complete 的替身：记录 prompt、按预设 deltas 逐块流出。"""
+
+    def __init__(self, deltas):
+        self._deltas = list(deltas)
+        self.prompts = []
+
+    async def astream_complete(self, prompt, **kw):
+        self.prompts.append(prompt)
+
+        async def _gen():
+            for d in self._deltas:
+                yield _TeachChunk(d)
+
+        return _gen()
+
+
+class _PoolNode:
+    """pool 节点替身：_teach_synthesize 用 get_content() 抽正文。"""
+
+    def __init__(self, text):
+        self._text = text
+
+    def get_content(self):
+        return self._text
+
+
+async def test_teach_synthesize_builds_prompt_streams_once_and_emits_deltas():
+    qa = QaCapability(None, FakeStreamLLM(["## 是什么\n", "MySQL 是…", "## 组成\n", "由…"]))
+    ctx = FakeCtx()
+    outline = [Dimension(label="是什么", query="什么是MySQL"),
+               Dimension(label="组成", query="MySQL由哪些部分组成")]
+    pool = [_PoolNode("片段甲"), _PoolNode("片段乙")]
+
+    answer = await qa._teach_synthesize(ctx, "MySQL基础知识", outline, pool)
+
+    # 一次流：只调用一次 astream_complete
+    assert len(qa.llm.prompts) == 1
+    prompt = qa.llm.prompts[0]
+    # 教案维度 label 进 prompt
+    assert "是什么" in prompt and "组成" in prompt
+    # grounding 铁律进 prompt
+    assert "只能来自" in prompt
+    # pool 片段进 prompt
+    assert "片段甲" in prompt and "片段乙" in prompt
+    # 轻分节格式指令进 prompt
+    assert "##" in prompt
+    # 逐 token 发 AnswerDeltaEvent，拼回全文
+    deltas = [e.delta for e in ctx.events if isinstance(e, AnswerDeltaEvent)]
+    assert deltas == ["## 是什么\n", "MySQL 是…", "## 组成\n", "由…"]
+    assert answer == "## 是什么\nMySQL 是…## 组成\n由…"
