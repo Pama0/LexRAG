@@ -222,3 +222,34 @@ def test_build_single_report_tags_variant_and_aggregates():
     assert [d["variant"] for d in detail] == ["当前系统", "当前系统"]
     assert detail[0]["user_input"] == "Q"
     assert len(detail) == 2
+
+
+# ── explain 行（无 category）：不被 REFUSE 短路、不计入分类准确率 ──
+async def test_score_row_explain_row_scores_and_is_not_refuse_skipped():
+    # explain 金标准行：无 category 字段、无 reference；answered。
+    # 应照常算 faithfulness/answer_relevancy（不被 REFUSE 短路），且 category 留空
+    # → aggregate 不把它计入分类准确率（已由 test_aggregate_skips_blank_category 覆盖）。
+    out = RagOutput(response="教学体答案", retrieved_contexts=["c"], outcome="answered")
+    specs = [
+        MetricSpec("faithfulness", _FakeMetric(0.9), lambda r, o: {}),
+        MetricSpec("answer_relevancy", _FakeMetric(0.8), lambda r, o: {}),
+    ]
+    res = await score_row(
+        {"user_input": "讲讲MVCC是什么", "reference": ""}, _FakeSUT(out), specs
+    )
+    assert res["outcome"] == "answered"
+    assert res["expected_category"] == ""        # 无金标准 category
+    assert res["faithfulness"] == 0.9            # 未被 REFUSE 短路
+    assert res["answer_relevancy"] == 0.8
+
+
+def test_aggregate_explain_rows_excluded_from_classification():
+    # explain 行（category 空）与难度分类行混合：分类准确率只算后者，explain 不被误判。
+    rows = [
+        {"outcome": "answered", "category": "retrievable", "expected_category": "retrievable"},
+        {"outcome": "answered", "category": "", "expected_category": ""},   # explain 行
+        {"outcome": "answered", "category": "", "expected_category": ""},   # explain 行
+    ]
+    rep = aggregate(rows)
+    assert rep["classification"]["total"] == 1      # 只数难度分类那 1 行
+    assert rep["classification"]["accuracy"] == 1.0

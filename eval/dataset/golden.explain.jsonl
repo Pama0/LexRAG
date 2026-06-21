@@ -1,0 +1,4 @@
+{"user_input": "讲讲MySQL的InnoDB存储引擎是什么、有哪些核心组成", "scope": null, "reference": ""}
+{"user_input": "讲懂MySQL的Buffer Pool：它是什么、解决什么问题、由哪些部分构成", "scope": null, "reference": ""}
+{"user_input": "请把MVCC的实现原理讲透", "scope": null, "reference": ""}
+{"user_input": "什么是聚簇索引？请讲清楚它的定义、作用和与二级索引的关系", "scope": null, "reference": ""}
