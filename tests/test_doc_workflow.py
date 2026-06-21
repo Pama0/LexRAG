@@ -790,3 +790,70 @@ async def test_library_count_question_routes_to_converse_tool_count_only():
     assert "已入库 3 本" in llm.prompts[1]
     assert "未能读取库藏清单" not in llm.prompts[1]
 
+
+# ── ConversationScoper 接线（Task 2）──────────────────────────────────
+def test_scoper_constructed_with_probe_vector_retriever():
+    from core.workflow.conversation_scoper import ConversationScoper
+    from core.retrieval.retrieve import VectorRetriever
+    wf = DocQueryWorkflow(_StubIndexManager(), _StubLLM())
+    assert isinstance(wf.scoper, ConversationScoper)
+    assert isinstance(wf.scoper.probe_retriever, VectorRetriever)
+
+
+async def test_scoper_narrows_book_titles_in_full_library():
+    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"讲一下gateway"}'])
+    wf = _wf(llm)
+
+    async def fake_scope(clean_query, user_book_titles, memory):
+        from core.workflow.conversation_scoper import ScopeDecision
+        return ScopeDecision(["openclaw"], "（我按《openclaw》回答…）\n")
+    wf.scoper.run = fake_scope
+
+    captured = {}
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        captured["book_titles"] = book_titles
+        return "答案", ["n1"]
+
+    async def fake_classify(clean_query, book_titles=None, probe=True):
+        from core.workflow.query_preprocess import PreprocessResult
+        captured["classify_books"] = book_titles
+        return PreprocessResult("retrievable")
+
+    wf.qa.retrieve = fake_retrieve
+    wf.qa.classify = fake_classify
+
+    await wf.run(query="讲一下gateway", memory=FakeMemory([_Msg("user", "讲讲openclaw")]))
+    assert captured["book_titles"] == ["openclaw"]      # 收窄透传到检索
+    assert captured["classify_books"] == ["openclaw"]   # 也透传到 classify probe
+
+
+async def test_scoper_called_with_user_books_and_result_flows():
+    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"讲一下gateway"}'])
+    wf = _wf(llm)
+
+    seen = {}
+
+    async def fake_scope(clean_query, user_book_titles, memory):
+        from core.workflow.conversation_scoper import ScopeDecision
+        seen["args"] = (clean_query, user_book_titles)
+        return ScopeDecision(user_book_titles, "")       # 模拟手选 no-op
+    wf.scoper.run = fake_scope
+
+    captured = {}
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        captured["book_titles"] = book_titles
+        return "答案", []
+
+    async def fake_classify(clean_query, book_titles=None, probe=True):
+        from core.workflow.query_preprocess import PreprocessResult
+        return PreprocessResult("retrievable")
+
+    wf.qa.retrieve = fake_retrieve
+    wf.qa.classify = fake_classify
+
+    await wf.run(query="讲一下gateway", memory=FakeMemory(), book_titles=["高性能MySQL"])
+    assert seen["args"] == ("讲一下gateway", ["高性能MySQL"])
+    assert captured["book_titles"] == ["高性能MySQL"]
+

@@ -52,6 +52,7 @@ from core.workflow.qa_capability import (  # noqa: F401  (事件类 re-export �
 from core.agent.qa_agent import QaAgent
 from core.retrieval.rerank import make_reranker
 from core.retrieval.retrieve import make_retriever
+from core.workflow.conversation_scoper import ConversationScoper
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,10 @@ class DocQueryWorkflow(Workflow):
             explain_retriever=make_retriever("hybrid"),       # explain 宽覆盖召回默认 hybrid
         )
         self.qa_agent = QaAgent(index_manager, llm, similarity_top_k, max_iterations=6)
+        # 全库多轮作用域收窄：probe 复用 workflow 的 probe_retriever 名字（None→vector）
+        self.scoper = ConversationScoper(
+            index_manager, probe_retriever=make_retriever(probe_retriever)
+        )
         # 决策开关（评测 ablation 用；off → 对应分支降级单轮 retrieve、probe 关闭）
         self._probe = probe_then_classify
         self._split_enabled = split_enabled
@@ -204,8 +209,11 @@ class DocQueryWorkflow(Workflow):
             return StudyPlanEvent()
         if decision.action in ("converse", "clarify"):
             return DirectReplyEvent(reply=decision.reply, action=decision.action)
-        # dispatch_qa（含降级）
+        # dispatch_qa（含降级）—— memory/book_titles 在 route 顶部已取
         await ctx.store.set("clean_query", decision.clean_query)
+        scope = await self.scoper.run(decision.clean_query, book_titles, memory)
+        await ctx.store.set("book_titles", scope.effective_book_titles or book_titles)
+        await ctx.store.set("scope_note", scope.note)
         return PreprocessEvent()
 
     # ── QA 内部预处理：委托 QA capability 做降噪 + 难度分类，据 category dispatch。 ──
