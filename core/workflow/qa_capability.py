@@ -471,7 +471,7 @@ class QaCapability:
     async def _teach_synthesize(
         self, ctx: Context, query: str, outline: list, pool: list
     ) -> str:
-        """教案(维度顺序) + 截断后的 pool → 讲师 prompt → 一次流式整合写作。
+        """教案(维度顺序) + (已由调用方截断的) pool → 讲师 prompt → 一次流式整合写作。
 
         结构来自教案（教学先验/TOC，安全元知识）；事实只来自 pool 片段（prompt 立铁律）。
         逐 token 发 AnswerDeltaEvent，前端零改动。
