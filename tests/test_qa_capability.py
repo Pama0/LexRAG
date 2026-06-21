@@ -1003,3 +1003,90 @@ async def test_classify_admit_failure_degrades_to_ok_and_runs_preprocessor():
     result = await qa.classify("MySQL锁", ["MySQL"])
     assert result.category == "retrievable"
     assert preprocessor_called["v"] is True
+
+
+# ── explain：宽召回后 admit，非 ok 抛异常（Task 5）──────────────────────
+
+
+async def test_explain_admit_out_of_scope_raises_out_of_scope():
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("MySQL 片段")]      # 召回到的是别的系统
+
+    async def fake_admit(query, passages):
+        return AdmitVerdict(verdict="out_of_scope", reason="PostgreSQL 不在库")
+
+    qa._explain_recall = fake_recall
+    qa.admitter.run = fake_admit
+
+    with pytest.raises(OutOfScope):
+        await qa.explain(ctx, "PostgreSQL的MVCC", None)
+
+
+async def test_explain_admit_missing_info_raises_missing_info_with_clarify():
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("索引内容")]
+
+    async def fake_admit(query, passages):
+        return AdmitVerdict(
+            verdict="missing_info", reason="指代不明",
+            clarify_question="你说的「这个索引」指哪一个？",
+        )
+
+    qa._explain_recall = fake_recall
+    qa.admitter.run = fake_admit
+
+    with pytest.raises(MissingInfo) as ei:
+        await qa.explain(ctx, "这个索引的应用场景", None)
+    assert ei.value.clarify_question == "你说的「这个索引」指哪一个？"
+
+
+async def test_explain_admit_ok_proceeds_to_outline():
+    # admit ok → 进 outline（不抛异常）；用空 outline 触发 EmptySkeleton 验证走到了 outline
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("w1")]
+
+    async def fake_admit(query, passages):
+        return AdmitVerdict(verdict="ok")
+
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        return []                                # 列不出教案 → EmptySkeleton
+
+    qa._explain_recall = fake_recall
+    qa.admitter.run = fake_admit
+    qa._book_chapters = lambda book_titles: []
+    qa.outliner.run = fake_outline
+
+    with pytest.raises(EmptySkeleton):
+        await qa.explain(ctx, "讲讲X", None)      # ok 放行 → 走到 outline → 空教案 → EmptySkeleton
+
+
+async def test_explain_admit_failure_degrades_to_ok_and_proceeds():
+    # admit 抛错 → 降级 ok → 仍进 outline（绝不阻塞）
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("w1")]
+
+    async def boom_admit(query, passages):
+        raise RuntimeError("admit 炸了")
+
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        return []                                # 走到 outline → EmptySkeleton
+
+    qa._explain_recall = fake_recall
+    qa.admitter.run = boom_admit
+    qa._book_chapters = lambda book_titles: []
+    qa.outliner.run = fake_outline
+
+    with pytest.raises(EmptySkeleton):
+        await qa.explain(ctx, "讲讲X", None)      # admit 炸 → 降级 ok → 走到 outline

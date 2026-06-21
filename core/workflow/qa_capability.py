@@ -28,7 +28,7 @@ from llama_index.core.workflow import Context, Event
 
 from core.retrieval.rerank import Reranker
 from core.retrieval.retrieve import Retriever, VectorRetriever
-from core.workflow.admitter import Admitter
+from core.workflow.admitter import Admitter, AdmitVerdict
 from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
 from core.workflow.query_decompose import QueryDecomposer
 from core.workflow.query_dimension import DimensionExtractor
@@ -289,6 +289,18 @@ class QaCapability:
             (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
             for n in located
         ]
+
+        # 1.5 可答性闸：吃宽召回片段判 ok/missing_info/out_of_scope；非 ok 抛异常
+        # 由 explain_branch 接住拒答/反问。admit 失败降级 ok（放行），不阻塞。
+        try:
+            verdict = await self.admitter.run(query, passages)
+        except Exception as exc:
+            logger.warning("explain admit 抛错，降级 ok 放行：%s", exc)
+            verdict = AdmitVerdict(verdict="ok")
+        if verdict.verdict == "out_of_scope":
+            raise OutOfScope(query)
+        if verdict.verdict == "missing_info":
+            raise MissingInfo(verdict.clarify_question)
 
         # 2. 出教案：教学维度词表 + 书的 TOC 提示（单书才有，多书/未选 → []）
         toc_hint = self._book_chapters(book_titles)
