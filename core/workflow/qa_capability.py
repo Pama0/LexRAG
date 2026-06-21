@@ -64,6 +64,30 @@ class EmptySkeleton(Exception):
     """AnswerOutliner 列不出骨架 → 由 explain_branch 落 agent 兜底。"""
 
 
+class OutOfScope(Exception):
+    """explain 路 admit 判库外 → 由 explain_branch 接住拒答。镜像 EmptySkeleton 的异常驱动控制流。"""
+
+
+class MissingInfo(Exception):
+    """explain 路 admit 判信息不足 → 由 explain_branch 接住反问。
+
+    clarify_question 由 Admitter 产；缺时 explain_branch 用 REFUSAL_FALLBACK 兜底。
+    """
+
+    def __init__(self, clarify_question: str = ""):
+        super().__init__(clarify_question or "")
+        self.clarify_question = clarify_question or ""
+
+
+# ── 拒答话术共享常量（库外分支与 explain OutOfScope catch 共用，避免分叉）──
+REFUSAL_TEXT = (
+    "这个问题知识库里暂未收录相关内容，我没法基于现有资料回答。"
+    "你可以换个已入库主题问我，或把问题换个角度再试试～"
+)
+# missing_info 缺 clarify_question 时的兜底反问
+REFUSAL_FALLBACK = "为了更准确地回答，能不能把问题再说具体一点？"
+
+
 # ── 流式专用事件（仅 write_event_to_stream，不参与 step 图）──────────
 class RetrievalStartEvent(Event):
     """开始检索（→ 前端 tool_call）。"""

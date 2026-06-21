@@ -857,3 +857,40 @@ async def test_teach_synthesize_builds_prompt_streams_once_and_emits_deltas():
     deltas = [e.delta for e in ctx.events if isinstance(e, AnswerDeltaEvent)]
     assert deltas == ["## 是什么\n", "MySQL 是…", "## 组成\n", "由…"]
     assert answer == "## 是什么\nMySQL 是…## 组成\n由…"
+
+
+# ── 异常 + 拒答常量（Task 2：纯加法，验可导入 + 值锁定）─────────────────
+from core.workflow.qa_capability import (
+    OutOfScope, MissingInfo, REFUSAL_TEXT, REFUSAL_FALLBACK,
+)
+
+
+def test_refusal_text_matches_existing_out_of_scope_branch_wording():
+    # 原样抽自 doc_workflow.out_of_scope_branch 的终结句，一字不差
+    assert REFUSAL_TEXT == (
+        "这个问题知识库里暂未收录相关内容，我没法基于现有资料回答。"
+        "你可以换个已入库主题问我，或把问题换个角度再试试～"
+    )
+
+
+def test_refusal_fallback_is_a_clarify_question():
+    # missing_info 缺 clarify_question 时的兜底反问：是一句引导补充的话
+    assert isinstance(REFUSAL_FALLBACK, str) and len(REFUSAL_FALLBACK) > 0
+    assert "？" in REFUSAL_FALLBACK or "?" in REFUSAL_FALLBACK
+
+
+def test_out_of_scope_exception_carries_query():
+    exc = OutOfScope("PostgreSQL的MVCC")
+    assert isinstance(exc, Exception)
+    assert exc.args == ("PostgreSQL的MVCC",)
+
+
+def test_missing_info_exception_carries_clarify_question():
+    exc = MissingInfo("你说的「这个索引」指哪一个？")
+    assert isinstance(exc, Exception)
+    assert exc.clarify_question == "你说的「这个索引」指哪一个？"
+
+
+def test_missing_info_exception_default_clarify_empty():
+    exc = MissingInfo()
+    assert exc.clarify_question == ""
