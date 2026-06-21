@@ -1222,3 +1222,69 @@ async def test_execute_simple_escalation_exception_falls_back_to_retrieve():
     qa.retrieve = fake_retrieve
     ans, nodes = await qa._execute_subq(FakeCtx(), "冷门问题", "simple", None)
     assert ans == "回落单轮"
+
+
+def _qa_answer_stub(decisions, exec_map):
+    """decisions: list[_SubDecision]; exec_map: {query: (answer, nodes)}。"""
+    from core.workflow.qa_capability import _SubDecision  # noqa
+    qa = _qa()
+    async def fake_split(cq): return [d.query for d in decisions]
+    qa.split_query = fake_split
+    di = {d.query: d for d in decisions}
+    async def fake_decide(q, bt, probe=True): return di[q]
+    qa._decide_subq = fake_decide
+    async def fake_exec(ctx, q, cat, bt): return exec_map[q]
+    qa._execute_subq = fake_exec
+    return qa
+
+
+async def test_answer_single_ok_no_decoration():
+    from core.workflow.qa_capability import _SubDecision
+    d = _SubDecision("什么是B+树", "ok", category="explain")
+    qa = _qa_answer_stub([d], {"什么是B+树": ("B+树是…", ["n"])})
+    ans, nodes, meta = await qa.answer(FakeCtx(), "什么是B+树", None)
+    assert ans == "B+树是…"
+    assert "##" not in ans            # 单问题不加分节标题
+    assert meta["category"] == "explain"
+    assert meta["sub_count"] == 1
+
+
+async def test_answer_multi_ok_sections_joined():
+    from core.workflow.qa_capability import _SubDecision
+    ds = [_SubDecision("MySQL锁", "ok", category="simple"),
+          _SubDecision("Redis持久化", "ok", category="explain")]
+    qa = _qa_answer_stub(ds, {"MySQL锁": ("锁有X", ["a"]), "Redis持久化": ("RDB/AOF", ["b"])})
+    ans, nodes, meta = await qa.answer(FakeCtx(), "讲讲MySQL锁和Redis持久化", None)
+    assert "锁有X" in ans and "RDB/AOF" in ans
+    assert nodes == ["a", "b"]
+    assert meta["category"] == "multi"
+    assert meta["categories"] == ["simple", "explain"]
+
+
+async def test_answer_partial_out_of_scope_appends_hint():
+    from core.workflow.qa_capability import _SubDecision
+    ds = [_SubDecision("MySQL锁", "ok", category="simple"),
+          _SubDecision("OpenCL的session", "out_of_scope", reason="库外")]
+    qa = _qa_answer_stub(ds, {"MySQL锁": ("锁有X", ["a"])})
+    ans, nodes, meta = await qa.answer(FakeCtx(), "MySQL锁和OpenCL的session", None)
+    assert "锁有X" in ans
+    assert "OpenCL的session" in ans       # 末尾提示该子问题不在库
+    assert nodes == ["a"]
+
+
+async def test_answer_partial_missing_info_appends_clarify():
+    from core.workflow.qa_capability import _SubDecision
+    ds = [_SubDecision("MySQL锁", "ok", category="simple"),
+          _SubDecision("这个索引的场景", "missing_info", clarify_question="指哪个索引？")]
+    qa = _qa_answer_stub(ds, {"MySQL锁": ("锁有X", ["a"])})
+    ans, _, _ = await qa.answer(FakeCtx(), "MySQL锁和这个索引的场景", None)
+    assert "锁有X" in ans and "指哪个索引？" in ans
+
+
+async def test_answer_all_out_of_scope_pure_refusal():
+    from core.workflow.qa_capability import _SubDecision, REFUSAL_TEXT
+    ds = [_SubDecision("PG的MVCC", "out_of_scope", reason="库外")]
+    qa = _qa_answer_stub(ds, {})
+    ans, nodes, meta = await qa.answer(FakeCtx(), "PG的MVCC", None)
+    assert ans == REFUSAL_TEXT
+    assert nodes == []

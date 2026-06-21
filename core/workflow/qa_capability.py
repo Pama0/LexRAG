@@ -265,6 +265,77 @@ class QaCapability:
                 logger.warning("simple 升级 agent 失败，回落单轮：%s", exc)
         return await self.retrieve(ctx, q, book_titles, nodes=nodes)
 
+    async def split_query(self, clean_query: str) -> list[str]:
+        """委托 QuerySplitter：clean_query → ≥1 个降噪自包含子问题。"""
+        return await self.splitter.run(clean_query)
+
+    async def answer(
+        self,
+        ctx: Context,
+        clean_query: str,
+        book_titles: Optional[list[str]],
+        probe: bool = True,
+    ) -> tuple[str, list, dict]:
+        """顶层编排：拆分 → 并行逐子问题判定 → 按序执行 ok 子问题 → 合并装饰。
+
+        - 并行只用于判定阶段（无用户可见输出）；执行/合成按子问题顺序串行（保流式顺序）。
+        - 单问题：无分节标题、无合并装饰，等价旧单路径。
+        - 部分非 ok：先答 ok 的，末尾追加 missing_info 反问 / out_of_scope "不在库" 提示。
+        - 全非 ok：纯拒答（out_of_scope→REFUSAL_TEXT）/反问（missing_info）。
+        """
+        sub_qs = await self.split_query(clean_query)
+        decisions = await asyncio.gather(
+            *(self._decide_subq(q, book_titles, probe=probe) for q in sub_qs)
+        )
+        oks = [d for d in decisions if d.verdict == "ok"]
+        missing = [d for d in decisions if d.verdict == "missing_info"]
+        oos = [d for d in decisions if d.verdict == "out_of_scope"]
+        multi = len(sub_qs) > 1
+        meta = {
+            "categories": [d.category for d in oks],
+            "sub_count": len(sub_qs),
+            "category": (oks[0].category if oks else "out_of_scope")
+            if len(sub_qs) == 1 else "multi",
+        }
+
+        # 全非 ok：退化纯拒答/反问（单条复用原话术）
+        if not oks:
+            if missing:
+                q = missing[0].clarify_question or REFUSAL_FALLBACK
+                return q, [], meta
+            return REFUSAL_TEXT, [], meta
+
+        # 执行 ok 子问题（按序流式）。多问题加分节标题；单问题裸答。
+        parts: list[str] = []
+        all_nodes: list = []
+        for d in oks:
+            if multi:
+                heading = f"\n## {d.query}\n"
+                ctx.write_event_to_stream(AnswerDeltaEvent(delta=heading))
+                parts.append(heading)
+            ans, nodes = await self._execute_subq(ctx, d.query, d.category, book_titles)
+            parts.append(ans)
+            all_nodes.extend(nodes)
+
+        # 末尾装饰：out_of_scope / missing_info 子问题（仅多问题且存在时）
+        tail = self._compose_tail(oos, missing)
+        if tail:
+            ctx.write_event_to_stream(AnswerDeltaEvent(delta=tail))
+            parts.append(tail)
+
+        return "".join(parts).strip(), all_nodes, meta
+
+    @staticmethod
+    def _compose_tail(oos: list, missing: list) -> str:
+        """合并末尾提示：库外子问题如实告知 + 信息不足子问题反问。"""
+        lines: list[str] = []
+        if oos:
+            names = "、".join(f"「{d.query}」" for d in oos)
+            lines.append(f"另外，{names} 知识库里暂未收录相关内容，无法作答。")
+        for d in missing:
+            lines.append(d.clarify_question or f"关于「{d.query}」，能再说具体一点吗？")
+        return ("\n\n" + "\n".join(lines)) if lines else ""
+
     def _format_probe(self, nodes: list, book_titles) -> str:
         """探测召回 → 喂 judge 的信号：命中数 + 章节分布 + top 截断片段。"""
         if not nodes:
