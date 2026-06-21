@@ -234,51 +234,42 @@ class QaCapability:
     async def explain(
         self, ctx: Context, query: str, book_titles: Optional[list[str]]
     ) -> tuple[str, list]:
-        """讲清楚：宽覆盖召回 → 列概念骨架 → 每节点检索 → 教学体分节合成。
+        """讲清楚：宽覆盖召回 → 教学维度教案(吃 TOC) → 每维度检索 → 合并截断 → 一次整合教学写作。
 
-        空骨架 → raise EmptySkeleton（由 explain_branch 落 agent 兜底）。
-        广度从骨架节点数自然涌现（1 节=单轮、N 节=扇出），不预分类。
+        空教案 → raise EmptySkeleton（由 explain_branch 落 agent 兜底）。
+        结构来自教学 schema + 书的 TOC（自上而下、不被召回碎片带偏）；事实只来自检索 pool。
         """
-        # 1. 宽覆盖召回（内部，不发流事件——空骨架时要静默落 agent，别先污染 UI）
+        # 1. 宽覆盖召回（内部，不发流事件——空教案时要静默落 agent，别先污染 UI）
         located = await self._explain_recall(query, book_titles)
         passages = [
             (n.get_content() if hasattr(n, "get_content") else n.text)[:500]
             for n in located
         ]
 
-        # 2. 列骨架
-        sub_queries = await self.outliner.run(query, passages)
-        if not sub_queries:
+        # 2. 出教案：教学维度词表 + 书的 TOC 提示（单书才有，多书/未选 → []）
+        toc_hint = self._book_chapters(book_titles)
+        outline = await self.outliner.run(query, passages, toc_hint)
+        if not outline:
             raise EmptySkeleton(query)
 
-        # 3. 每节点检索（此时才发 RetrievalStart）
+        # 3. 每维度检索扇出 → 去重合并 → 截断/重排到上下文预算（此时才发 RetrievalStart）
         ctx.write_event_to_stream(RetrievalStartEvent(query=query))
-        retrieved = await self._retrieve_all(sub_queries, book_titles)
+        retrieved = await self._retrieve_all([d.query for d in outline], book_titles)
         pool = self._merge_pool(retrieved)
+        if self.reranker:
+            pool = await self.reranker.rerank(query, pool, self.rerank_candidate_k)
+        else:
+            pool = sorted(
+                pool, key=lambda n: getattr(n, "score", 0) or 0, reverse=True
+            )[: self.rerank_candidate_k]
         ctx.write_event_to_stream(RetrievalDoneEvent(count=len(pool)))
+        if not pool:
+            scope = f"《{'》《'.join(book_titles)}》中" if book_titles else "知识库中"
+            return f"在{scope}没有检索到与「{query}」相关的内容。", []
 
-        # 4. 教学体合成：开场全景 → 逐节接地 → 收束（每段只从对应 chunk 出事实）
-        parts: list[str] = []
-        if pool:
-            intro = await self._synthesize_stream(
-                ctx, f"请用一段话总览，引出下面要分述的几个方面：{query}", pool
-            )
-            parts.append(intro)
-        for sub_q, ns in zip(sub_queries, retrieved):
-            h = f"\n\n## {sub_q}\n"
-            ctx.write_event_to_stream(AnswerDeltaEvent(delta=h))
-            body = (
-                await self._synthesize_stream(ctx, sub_q, ns)
-                if ns
-                else "（未检索到相关内容）"
-            )
-            parts.append(h + body)
-        if pool:
-            outro = await self._synthesize_stream(
-                ctx, f"请用一两句话小结上面关于「{query}」的内容", pool
-            )
-            parts.append("\n\n" + outro)
-        return "".join(parts).strip(), pool
+        # 4. 一次整合教学写作（教案当脚手架、讲师 prompt 立 grounding + 做减法）
+        answer = await self._teach_synthesize(ctx, query, outline, pool)
+        return answer, pool
 
     async def split(
         self, ctx: Context, query: str, book_titles: Optional[list[str]]

@@ -676,48 +676,117 @@ class _RecallNode:
         self.text = text
 
 
-async def test_explain_builds_sections_from_skeleton():
+async def test_explain_outlines_with_toc_then_teaches_over_merged_pool():
     qa = _qa(FakeIndexManager(nodes=[]))
     ctx = FakeCtx()
+    seen = {}
 
     async def fake_recall(query, book_titles):
-        return [_RecallNode("w1"), _RecallNode("w2")]   # 宽召回片段（node 替身）
+        return [_RecallNode("w1"), _RecallNode("w2")]
 
-    async def fake_outline(query, passages, max_items=8):
-        return ["索引基础", "事务基础"]          # 骨架两节
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        seen["toc_hint"] = toc_hint            # 捕获 explain 传入的 TOC 提示
+        return [Dimension(label="是什么", query="什么是MySQL"),
+                Dimension(label="组成", query="MySQL由哪些部分组成")]
 
     async def fake_retrieve_all(sub_queries, book_titles):
-        return [["a1"], ["b1"]]                  # 每节点各自命中
+        seen["sub_queries"] = sub_queries      # 应是各维度的 query
+        return [["a1"], ["b1"]]
 
-    async def fake_synth(ctx, query, nodes):
-        return f"[{query}]"
+    async def fake_teach(ctx, query, outline, pool):
+        seen["teach"] = (query, [d.label for d in outline], pool)
+        return f"[teach:{query}]"
 
     qa._explain_recall = fake_recall
+    qa._book_chapters = lambda book_titles: ["第1章 索引", "第2章 事务"]
     qa.outliner.run = fake_outline
     qa._retrieve_all = fake_retrieve_all
-    qa._synthesize_stream = fake_synth
+    qa._teach_synthesize = fake_teach
 
     answer, nodes = await qa.explain(ctx, "MySQL基础知识", None)
-    assert "## 索引基础" in answer and "## 事务基础" in answer   # 逐节标题
-    assert "[索引基础]" in answer                                # 逐节正文来自该节合成
-    assert nodes == ["a1", "b1"]                                # 去重合并池
+
+    assert seen["toc_hint"] == ["第1章 索引", "第2章 事务"]      # TOC 喂给 outliner
+    assert seen["sub_queries"] == ["什么是MySQL", "MySQL由哪些部分组成"]
+    assert nodes == ["a1", "b1"]                               # 去重合并池
+    assert seen["teach"] == ("MySQL基础知识", ["是什么", "组成"], ["a1", "b1"])
+    assert answer == "[teach:MySQL基础知识]"                    # 一次整合写的产物
 
 
-async def test_explain_empty_skeleton_raises():
+async def test_explain_empty_outline_raises():
     qa = _qa(FakeIndexManager(nodes=[]))
     ctx = FakeCtx()
 
     async def fake_recall(query, book_titles):
         return [_RecallNode("w1")]
 
-    async def fake_outline(query, passages, max_items=8):
-        return []                                # 列不出骨架
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        return []                                # 列不出教案
 
     qa._explain_recall = fake_recall
+    qa._book_chapters = lambda book_titles: []
     qa.outliner.run = fake_outline
 
     with pytest.raises(EmptySkeleton):
         await qa.explain(ctx, "讲讲X", None)
+
+
+async def test_explain_empty_pool_returns_scope_hint():
+    qa = _qa(FakeIndexManager(nodes=[]))
+    ctx = FakeCtx()
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("w1")]
+
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        return [Dimension(label="是什么", query="什么是X")]
+
+    async def fake_retrieve_all(sub_queries, book_titles):
+        return [[]]                              # 每维度都召回空 → pool 空
+
+    qa._explain_recall = fake_recall
+    qa._book_chapters = lambda book_titles: []
+    qa.outliner.run = fake_outline
+    qa._retrieve_all = fake_retrieve_all
+
+    answer, nodes = await qa.explain(ctx, "讲讲X", None)
+    assert nodes == [] and "没有检索到" in answer   # 有教案但无料 → 如实告知，不强写
+
+
+async def test_explain_truncates_pool_to_budget_when_no_reranker():
+    qa = _qa(FakeIndexManager(nodes=[]))
+    qa.rerank_candidate_k = 2
+    ctx = FakeCtx()
+
+    class _Scored:
+        def __init__(self, nid, score):
+            self.node_id = nid
+            self.score = score
+        def get_content(self):
+            return self.node_id
+
+    async def fake_recall(query, book_titles):
+        return [_RecallNode("w1")]
+
+    async def fake_outline(query, passages, toc_hint=None, max_items=8):
+        return [Dimension(label="是什么", query="q")]
+
+    async def fake_retrieve_all(sub_queries, book_titles):
+        return [[_Scored("low", 0.1), _Scored("high", 0.9), _Scored("mid", 0.5)]]
+
+    captured = {}
+
+    async def fake_teach(ctx, query, outline, pool):
+        captured["pool"] = [n.node_id for n in pool]
+        return "x"
+
+    qa._explain_recall = fake_recall
+    qa._book_chapters = lambda book_titles: []
+    qa.outliner.run = fake_outline
+    qa._retrieve_all = fake_retrieve_all
+    qa._teach_synthesize = fake_teach
+
+    await qa.explain(ctx, "讲讲X", None)
+    assert captured["pool"] == ["high", "mid"]    # 无 reranker：按 score 降序截到 rerank_candidate_k
 
 
 async def test_gate_delegates_to_query_gate():
