@@ -22,6 +22,7 @@ from llama_index.core.llms import LLM
 from llama_index.core.memory import ChatMemoryBuffer
 
 from core.workflow.summarizer import SUMMARY_MARKER
+from core.rag.inventory import list_books_text
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +46,14 @@ _FRONT_DOOR_PROMPT = """你是知识库助手的对话门口。对下面的 quer
   铁律：凡承载知识的具体提问，哪怕你自己知道答案，也绝不在这里作答——一律 dispatch_qa 交检索系统按知识库回答。
 - dispatch_study_plan：要求基于某本书生成学习计划/学习路线。clean_query 放净化后的请求。
 - converse：寒暄/问候/致谢/闲聊、问你是谁或能做什么这类元问题，以及【对上一轮回答的反馈、质疑、不满、调侃】（如"你逗我呢""为什么答不了""不对吧"——参考对话历史里上一轮系统的回复来判断）。reply 放面向用户的自然回复；若上一轮是拒答/没答好而本轮是不满，先如实承认再引导。
+  【元工具（仅 converse 路径可用）】若本轮是关于知识库藏书的元查询（"库里有什么""有 MySQL 的书吗""多少本"等），设 tool="list_books" + tool_filter（书名子串，大小写不敏感，如"mysql"；无过滤留空）+ tool_count_only（只要计数时 true，列清单时 false），reply 留空（系统查库后另行组织）。纯寒暄/反馈/无需库藏数据时 tool="" 照常填 reply。
+  【红线】tool 只能是 list_books。绝不可用于答书里的内容问题——内容问题一律 dispatch_qa 下沉检索。
 - clarify：本轮明显在指会话里的某个东西，但你无法从历史中确定所指（落在很早、或有歧义）。reply 放一句自然反问，点明不明之处，能列候选就列。
 
 判断本轮与上一轮的关系，以【对话历史】为准，别只看这句话的字面。
 
 只返回 JSON，不要其它任何内容：
-{"action":"dispatch_qa / dispatch_study_plan / converse / clarify","clean_query":"净化后的自包含 query（dispatch 时填）","reply":"面向用户的话（converse/clarify 时填）","reason":"简短理由"}
+{"action":"dispatch_qa / dispatch_study_plan / converse / clarify","clean_query":"净化后的自包含 query（dispatch 时填）","reply":"面向用户的话（converse/clarify 且无需工具时填）","reason":"简短理由","tool":"list_books 或空串（仅 converse 元查询时填 list_books）","tool_filter":"书名子串过滤（tool=list_books 时填，无过滤留空）","tool_count_only":false}
 
 对话历史：
 {history}
@@ -60,26 +63,49 @@ _FRONT_DOOR_PROMPT = """你是知识库助手的对话门口。对下面的 quer
 query：{query}"""
 
 
+# 2nd LLM：converse+tool 路径用工具结果组自然回复。非 json_object，自然文本。
+_COMPOSE_PROMPT = """用户问了关于知识库藏书的问题。下面是系统从知识库元数据查到的真实结果。请据此用一句自然、面向用户的话回复，不要机械复述数据。
+
+铁律：
+- 只能基于下面的【库藏数据】答，不得编造未列出的书。
+- 简短自然，别寒暄一堆。
+
+用户问题：{query}
+
+库藏数据：
+{data}"""
+
+
 @dataclass
 class FrontDoorDecision:
-    """门口产出：action 决定 dispatch；dispatch_* 带 clean_query，converse/clarify 带 reply。"""
+    """门口产出：action 决定 dispatch；dispatch_* 带 clean_query，converse/clarify 带 reply。
+
+    converse+tool 时 reply 由系统查库 + 2nd LLM 组回复后填入。
+    """
 
     action: str
     clean_query: str = ""
     reply: str = ""
     reason: str = ""
+    tool: str = ""
+    tool_filter: str = ""
+    tool_count_only: bool = False
 
 
 class FrontDoorDecisionModel(BaseModel):
     """LLM 判定的目标 schema（json_object 不保 schema，这步 Pydantic 校验才是约束）。
 
     action 用 Literal 锁枚举，非法值在 model_validate 阶段被拒、走降级。
+    tool 仅 converse 路径用，锁枚举 list_books / 空串；绝不可加 book_search（红线）。
     """
 
     action: Literal["dispatch_qa", "dispatch_study_plan", "converse", "clarify"]
     clean_query: str = Field(default="", description="dispatch_* 的自包含 query")
     reply: str = Field(default="", description="converse/clarify 面向用户的回复")
     reason: str = Field(default="", description="简短理由")
+    tool: Literal["list_books", ""] = Field(default="", description="converse 元工具，仅 list_books")
+    tool_filter: str = Field(default="", description="书名子串过滤，大小写不敏感")
+    tool_count_only: bool = Field(default=False, description="只要计数时 true")
 
 
 def _strip_fences(text: str) -> str:
@@ -122,10 +148,14 @@ def format_scope(book_titles: Optional[list[str]]) -> str:
 
 
 class FrontDoorAgent:
-    """注入 LLM，对外只暴露一个 run。单次结构化决策，便于单测（mock LLM 控输出）。"""
+    """注入 LLM + index_manager，对外只暴露一个 run。单次结构化决策 + converse 元工具路径。
 
-    def __init__(self, llm: LLM):
+    index_manager 供 converse+list_books 查库藏元数据；None 时元工具路径降级占位文本。
+    """
+
+    def __init__(self, llm: LLM, index_manager=None):
         self.llm = llm
+        self.index_manager = index_manager
 
     async def run(
         self,
@@ -154,11 +184,55 @@ class FrontDoorAgent:
                     "front_door: action=%s clean_query=%r", d.action, clean[:80]
                 )
                 return FrontDoorDecision(d.action, clean_query=clean, reason=d.reason)
-            # converse / clarify：对话表层，直接回复（空 reply 兜底）
+            if d.action == "clarify":
+                reply = (d.reply or "").strip() or _FALLBACK_REPLY
+                logger.info("front_door: action=clarify")
+                return FrontDoorDecision("clarify", reply=reply, reason=d.reason)
+            # converse
+            if d.tool == "list_books":
+                reply = await self._converse_with_tool(original, d)
+                return FrontDoorDecision(
+                    "converse", reply=reply, reason=d.reason,
+                    tool=d.tool, tool_filter=d.tool_filter, tool_count_only=d.tool_count_only,
+                )
+            # converse 无 tool：reply 直接用（空 reply 兜底）
             reply = (d.reply or "").strip() or _FALLBACK_REPLY
-            logger.info("front_door: action=%s", d.action)
-            return FrontDoorDecision(d.action, reply=reply, reason=d.reason)
+            logger.info("front_door: action=converse")
+            return FrontDoorDecision("converse", reply=reply, reason=d.reason)
         except Exception as exc:
             # 任何失败（空返回 / 非法 JSON / schema 不符 / 网络）→ 降级 dispatch_qa + 原 query，绝不阻塞
             logger.warning("front_door 解析失败，降级 dispatch_qa + 原 query：%s", exc)
             return FrontDoorDecision("dispatch_qa", clean_query=original)
+
+    async def _converse_with_tool(self, original: str, d: FrontDoorDecisionModel) -> str:
+        """converse + list_books：查库藏元数据 → 2nd LLM 组自然回复。
+
+        工具失败 → 占位文本进 2nd；2nd 失败/空 → 裸 tool_result 当 reply。
+        """
+        try:
+            tool_result = list_books_text(
+                self.index_manager, d.tool_filter, d.tool_count_only
+            )
+        except Exception as exc:
+            logger.warning("front_door list_books 查询失败，用占位文本：%s", exc)
+            tool_result = "（未能读取库藏清单）"
+        logger.info(
+            "front_door: action=converse tool=list_books filter=%r count_only=%s",
+            d.tool_filter, d.tool_count_only,
+        )
+        return await self._compose_tool_reply(original, tool_result)
+
+    async def _compose_tool_reply(self, original: str, tool_result: str) -> str:
+        """2nd LLM：用工具结果 + 原 query 组自然回复。失败降级裸 tool_result。"""
+        prompt = (
+            _COMPOSE_PROMPT.replace("{query}", original)
+            .replace("{data}", tool_result)
+        )
+        try:
+            resp = await self.llm.acomplete(prompt)   # 非 json_object，自然文本
+            text = str(resp).strip()
+            if text:
+                return text
+        except Exception as exc:
+            logger.warning("front_door compose reply 失败，用裸 tool_result：%s", exc)
+        return tool_result

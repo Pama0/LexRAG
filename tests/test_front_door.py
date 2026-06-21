@@ -148,3 +148,158 @@ def test_format_history_without_summary_just_tail():
     msgs = [_Msg("user", f"q{i}") for i in range(10)]
     out = format_history(FakeMemory(msgs), max_msgs=3)
     assert "q9" in out and "q0" not in out
+
+
+# ── converse + list_books 元工具路径（Task 3）──────────────────────────
+
+
+class _FakeCollection:
+    def __init__(self, metas):
+        self._metas = metas
+
+    def get(self, include=None):
+        return {"metadatas": self._metas}
+
+
+class _FakeIndexManager:
+    def __init__(self, metas):
+        self.chroma_collection = _FakeCollection(metas)
+
+
+def _agent_with_lib(llm, metas):
+    """带 index_manager 的 FrontDoorAgent（元工具路径需要）。"""
+    return FrontDoorAgent(llm, index_manager=_FakeIndexManager(metas))
+
+
+async def test_converse_list_books_full_invokes_tool_and_composes_reply():
+    # "库里都有什么" → 1st 判 converse+tool=list_books → 查库 → 2nd 组回复
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","reply":"","reason":"元查询"}',
+        '已入库的有《高性能MySQL》和《Redis》两本。',
+    ])
+    metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}]
+    d = await _agent_with_lib(llm, metas).run("现在库里都有什么书")
+    assert d.action == "converse"
+    assert "高性能MySQL" in d.reply       # 2nd 组的回复含书名
+    assert llm.calls == 2                  # 1st 决策 + 2nd 组回复
+    # 2nd prompt 含工具结果 + 原 query
+    assert "已入库书籍" in llm.prompts[1] or "《高性能MySQL》" in llm.prompts[1]
+    assert "现在库里都有什么书" in llm.prompts[1]
+
+
+async def test_converse_list_books_filter_passes_filter_to_tool():
+    # "有 MySQL 的书吗" → tool_filter="mysql" → 工具结果只含 MySQL 书
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","tool_filter":"mysql","reply":""}',
+        '有 MySQL 相关的书：《高性能MySQL》。',
+    ])
+    metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}]
+    d = await _agent_with_lib(llm, metas).run("有 MySQL 的书吗")
+    assert d.action == "converse"
+    assert "高性能MySQL" in d.reply
+    # 2nd prompt 的工具结果不含 Redis（被 filter 过滤）
+    assert "Redis" not in llm.prompts[1]
+    assert "匹配「mysql」" in llm.prompts[1]
+
+
+async def test_converse_list_books_count_only_returns_count():
+    # "多少本" → tool_count_only=true → 工具结果只回计数
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","tool_count_only":true,"reply":""}',
+        '目前库里一共有 2 本书。',
+    ])
+    metas = [{"book_title": "甲"}, {"book_title": "乙"}]
+    d = await _agent_with_lib(llm, metas).run("现在有多少本书")
+    assert d.action == "converse"
+    assert "2" in d.reply
+    assert "已入库 2 本" in llm.prompts[1]   # 工具结果是计数，不是列表
+
+
+async def test_converse_no_tool_uses_reply_directly_no_2nd_call():
+    # 纯寒暄 → tool="" → reply 直接用，不调 2nd
+    llm = FakeLLM(['{"action":"converse","tool":"","reply":"你好！我是文档知识库助手～"}'])
+    d = await _agent_with_lib(llm, []).run("你好")
+    assert d.action == "converse"
+    assert "知识库助手" in d.reply
+    assert llm.calls == 1                    # 只 1st，无 2nd
+
+
+async def test_converse_tool_with_filter_and_count_only():
+    # "有 mysql 吗，几本" → filter + count_only 同时带
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","tool_filter":"mysql","tool_count_only":true,"reply":""}',
+        '有 1 本匹配 MySQL 的书。',
+    ])
+    metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}]
+    d = await _agent_with_lib(llm, metas).run("有 mysql 吗，几本")
+    assert d.action == "converse"
+    assert "匹配「mysql」的书有 1 本" in llm.prompts[1]
+
+
+async def test_converse_tool_compose_failure_degrades_to_raw_tool_result():
+    # 2nd LLM 抛错 → 降级裸 tool_result 当 reply
+    class _BoomLLM:
+        def __init__(self):
+            self.calls = 0
+            self.prompts = []
+        async def acomplete(self, prompt, **kw):
+            self.calls += 1
+            self.prompts.append(prompt)
+            if self.calls == 1:
+                return _Resp('{"action":"converse","tool":"list_books","reply":""}')
+            raise RuntimeError("2nd 炸了")
+    llm = _BoomLLM()
+    metas = [{"book_title": "甲"}]
+    d = await _agent_with_lib(llm, metas).run("库里有什么")
+    assert d.action == "converse"
+    assert "已入库书籍" in d.reply and "《甲》" in d.reply   # 裸 tool_result
+
+
+async def test_converse_tool_compose_empty_degrades_to_raw_tool_result():
+    # 2nd LLM 返回空 → 降级裸 tool_result
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","reply":""}',
+        "",
+    ])
+    metas = [{"book_title": "甲"}]
+    d = await _agent_with_lib(llm, metas).run("库里有什么")
+    assert d.action == "converse"
+    assert "已入库书籍" in d.reply and "《甲》" in d.reply
+
+
+async def test_converse_tool_list_books_failure_degrades_to_placeholder():
+    # list_books_text 抛错 → 占位文本进 2nd LLM
+    class _BrokenCollection:
+        def get(self, include=None):
+            raise RuntimeError("chroma 挂了")
+    class _BrokenIM:
+        chroma_collection = _BrokenCollection()
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","reply":""}',
+        '抱歉，我没能读取库藏清单。',
+    ])
+    agent = FrontDoorAgent(llm, index_manager=_BrokenIM())
+    d = await agent.run("库里有什么")
+    assert d.action == "converse"
+    assert "未能读取库藏清单" in llm.prompts[1]   # 占位文本进了 2nd prompt
+    assert "抱歉" in d.reply
+
+
+async def test_dispatch_qa_ignores_tool_field():
+    # dispatch_qa 即使 LLM 误填 tool，也不走工具路径
+    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"MySQL锁","tool":"list_books"}'])
+    d = await _agent_with_lib(llm, []).run("MySQL有哪些锁")
+    assert d.action == "dispatch_qa"
+    assert d.clean_query == "MySQL锁"
+    assert llm.calls == 1                    # 不调 2nd
+
+
+async def test_front_door_prompt_has_tool_definition_and_redline():
+    llm = FakeLLM(['{"action":"converse","tool":"","reply":"hi"}'])
+    await _agent_with_lib(llm, []).run("你好")
+    p = llm.prompts[0]
+    assert "list_books" in p                 # 工具定义进 prompt
+    assert "tool_filter" in p
+    assert "tool_count_only" in p
+    # 红线：内容问题一律 dispatch_qa
+    assert "dispatch_qa" in p
