@@ -20,6 +20,7 @@
 """
 import asyncio
 import logging
+from dataclasses import dataclass
 from typing import Optional
 
 from llama_index.core import get_response_synthesizer
@@ -30,10 +31,12 @@ from core.retrieval.rerank import Reranker
 from core.retrieval.retrieve import Retriever, VectorRetriever
 from core.workflow.admitter import Admitter, AdmitVerdict
 from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
+from core.workflow.query_classifier import QueryClassifier, ClassifyResult
 from core.workflow.query_decompose import QueryDecomposer
 from core.workflow.query_dimension import DimensionExtractor
 from core.workflow.query_gate import QueryGate
 from core.workflow.query_preprocess import QueryPreprocessor, PreprocessResult
+from core.workflow.query_splitter import QuerySplitter
 from core.workflow.answer_outliner import AnswerOutliner
 
 logger = logging.getLogger(__name__)
@@ -108,6 +111,17 @@ class AnswerDeltaEvent(Event):
     delta: str
 
 
+@dataclass
+class _SubDecision:
+    """单个子问题的判定结果：可答性 verdict + （ok 时）类型 category。"""
+
+    query: str
+    verdict: str = "ok"          # ok / missing_info / out_of_scope
+    category: str = ""           # explain/compare/simple/complex（仅 ok）
+    reason: str = ""
+    clarify_question: str = ""
+
+
 class QaCapability:
     """文档库问答能力：降噪分类 → 检索 → 流式合成 / 拆解汇总。注入式，独立可测。"""
 
@@ -147,6 +161,10 @@ class QaCapability:
         self.admitter = Admitter(llm)
         self.outliner = AnswerOutliner(llm)
         self._retrieve_concurrency = 4  # 扇出检索并发上限，防 embedding/BM25/rerank 打爆
+        self.splitter = QuerySplitter(llm)
+        self.classifier = QueryClassifier(llm)
+        # 有界 agent 由 doc_workflow 构造后注入（complex / simple 升级用）；None → 降级单轮
+        self.qa_agent = None
 
     async def gate(self, clean_query: str) -> tuple[str, str]:
         """Call A：检索降噪 + 意图二判（explain / other）。委托 QueryGate。"""
@@ -185,6 +203,32 @@ class QaCapability:
             # 此处再兜一层防 admitter.run 契约级异常，绝不阻塞。
             logger.warning("classify admit 抛错，降级 ok 放行：%s", exc)
         return await self.preprocessor.run(clean_query, retrieval_context)
+
+    async def _decide_subq(
+        self, q: str, book_titles: Optional[list[str]], probe: bool = True
+    ) -> "_SubDecision":
+        """单子问题判定：probe → admit（非 ok 短路）→ classify。失败一律放行/降级。"""
+        evidence = ""
+        if probe:
+            try:
+                located = await self._probe_retrieve(q, book_titles)
+                evidence = self._format_probe(located, book_titles)
+            except Exception as exc:
+                logger.warning("_decide_subq probe 失败，纯文本判定：%s", exc)
+        try:
+            verdict = await self.admitter.run(q, [evidence])
+        except Exception as exc:
+            logger.warning("_decide_subq admit 抛错，降级 ok：%s", exc)
+            verdict = None
+        if verdict is not None and verdict.verdict == "out_of_scope":
+            return _SubDecision(q, "out_of_scope", reason=verdict.reason)
+        if verdict is not None and verdict.verdict == "missing_info":
+            return _SubDecision(
+                q, "missing_info", reason=verdict.reason,
+                clarify_question=verdict.clarify_question,
+            )
+        result = await self.classifier.run(q, evidence)
+        return _SubDecision(q, "ok", category=result.category, reason=result.reason)
 
     def _format_probe(self, nodes: list, book_titles) -> str:
         """探测召回 → 喂 judge 的信号：命中数 + 章节分布 + top 截断片段。"""

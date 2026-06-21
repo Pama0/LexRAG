@@ -1083,3 +1083,48 @@ async def test_explain_admit_failure_degrades_to_ok_and_proceeds():
 
     with pytest.raises(EmptySkeleton):
         await qa.explain(ctx, "讲讲X", None)      # admit 炸 → 降级 ok → 走到 outline
+
+
+# ── _decide_subq：逐子问题 probe → admit → classify 判定 ──────────────
+from core.workflow.admitter import AdmitVerdict
+from core.workflow.query_classifier import ClassifyResult
+
+
+def _qa_for_decide():
+    qa = _qa()
+    async def fake_probe(q, bt): return []
+    qa._probe_retrieve = fake_probe
+    qa._format_probe = lambda nodes, bt: "EVIDENCE"
+    return qa
+
+
+async def test_decide_subq_out_of_scope_short_circuits_classify():
+    qa = _qa_for_decide()
+    async def fake_admit(q, passages): return AdmitVerdict(verdict="out_of_scope", reason="库外")
+    qa.admitter.run = fake_admit
+    async def boom(q, e): raise AssertionError("classify 不该被调用")
+    qa.classifier.run = boom
+    d = await qa._decide_subq("PostgreSQL的MVCC", None)
+    assert d.verdict == "out_of_scope"
+    assert d.category == ""
+
+
+async def test_decide_subq_missing_info_carries_clarify():
+    qa = _qa_for_decide()
+    async def fake_admit(q, passages):
+        return AdmitVerdict(verdict="missing_info", reason="指代不明", clarify_question="你说的索引指哪个？")
+    qa.admitter.run = fake_admit
+    d = await qa._decide_subq("这个索引的应用场景", None)
+    assert d.verdict == "missing_info"
+    assert d.clarify_question == "你说的索引指哪个？"
+
+
+async def test_decide_subq_ok_runs_classifier():
+    qa = _qa_for_decide()
+    async def fake_admit(q, passages): return AdmitVerdict(verdict="ok")
+    qa.admitter.run = fake_admit
+    async def fake_classify(q, e): return ClassifyResult("complex", "多跳")
+    qa.classifier.run = fake_classify
+    d = await qa._decide_subq("MySQL默认隔离级别有哪些并发问题", None)
+    assert d.verdict == "ok"
+    assert d.category == "complex"
