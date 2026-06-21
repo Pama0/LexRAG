@@ -159,7 +159,7 @@ class DocQueryWorkflow(Workflow):
         super().__init__(**kw)
         # 门口 Router（消指代 + 规范化 + 意图分类）与 QA capability（降噪分类 + 检索合成）
         # 各自独立、各自可测。检索/合成实质逻辑全在 qa，本 workflow 只编排 + 委托。
-        self.front_door = FrontDoorAgent(llm)
+        self.front_door = FrontDoorAgent(llm, index_manager)
         self.qa = QaCapability(
             index_manager, llm, similarity_top_k, max_sub_queries,
             reranker=make_reranker(reranker),

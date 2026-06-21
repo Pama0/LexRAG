@@ -713,3 +713,80 @@ async def test_out_of_scope_branch_uses_refusal_text_constant():
     assert str(result.response) == REFUSAL_TEXT
     assert result.metadata.get("category") == "out_of_scope"
 
+
+# ── front_door converse + list_books 端到端（Task 4）────────────────────
+
+
+class _LibCollection:
+    def __init__(self, metas):
+        self._metas = metas
+
+    def get(self, include=None):
+        return {"metadatas": self._metas}
+
+
+class _LibIndexManager:
+    def __init__(self, metas):
+        self.chroma_collection = _LibCollection(metas)
+        self._metas = metas
+
+    def get_index(self):
+        class _Idx:
+            def as_retriever(self, **kw):
+                raise AssertionError("元查询不应检索")
+        return _Idx()
+
+
+async def test_library_listing_routes_to_converse_tool_without_retrieval():
+    # "现在库里都有什么" → front_door converse+list_books → reply 含书名、不检索
+    metas = [{"book_title": "高性能MySQL"}, {"book_title": "Redis"}]
+    im = _LibIndexManager(metas)
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","reply":"","reason":"元查询"}',
+        '已入库的有《高性能MySQL》和《Redis》两本。',
+    ])
+    wf = DocQueryWorkflow(index_manager=im, llm=llm, similarity_top_k=3, timeout=10)
+
+    retrieve_called = {"v": False}
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        retrieve_called["v"] = True
+        return "不应被调用", []
+
+    wf.qa.retrieve = fake_retrieve
+
+    result = await wf.run(query="现在库里都有什么书", memory=FakeMemory())
+    assert retrieve_called["v"] is False            # 元查询不检索
+    assert "高性能MySQL" in str(result.response)
+    assert "Redis" in str(result.response)
+    assert result.source_nodes == []
+    assert result.metadata.get("action") == "converse"
+    assert llm.calls == 2                            # 1st 决策 + 2nd 组回复
+    # 2nd prompt 的 {data} 被真实 tool_result 替换（含书名），非占位符
+    assert "已入库书籍" in llm.prompts[1]
+    assert "高性能MySQL" in llm.prompts[1]
+    assert "未能读取库藏清单" not in llm.prompts[1]
+
+
+async def test_library_count_question_routes_to_converse_tool_count_only():
+    # "多少本" → converse+list_books+count_only → reply 含计数、不检索
+    metas = [{"book_title": "甲"}, {"book_title": "乙"}, {"book_title": "丙"}]
+    im = _LibIndexManager(metas)
+    llm = FakeLLM([
+        '{"action":"converse","tool":"list_books","tool_count_only":true,"reply":""}',
+        '目前库里一共有 3 本书。',
+    ])
+    wf = DocQueryWorkflow(index_manager=im, llm=llm, similarity_top_k=3, timeout=10)
+
+    async def fake_retrieve(ctx, query, book_titles, preamble=""):
+        raise AssertionError("元查询不应检索")
+
+    wf.qa.retrieve = fake_retrieve
+
+    result = await wf.run(query="现在有多少本书", memory=FakeMemory())
+    assert "3" in str(result.response)
+    assert result.metadata.get("action") == "converse"
+    # 2nd prompt 的 {data} 被真实计数 tool_result 替换，非占位符
+    assert "已入库 3 本" in llm.prompts[1]
+    assert "未能读取库藏清单" not in llm.prompts[1]
+
