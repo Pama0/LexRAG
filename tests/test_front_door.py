@@ -4,7 +4,12 @@ mock LLM 控返回，验证：4 出口解析 / 净化输入透传 / 失败降级
 对话/意图判断质量依赖真 LLM，不在单测范围。
 设计见 docs/superpowers/specs/2026-06-20-front-door-admission-node-design.md。
 """
-from core.workflow.front_door import FrontDoorAgent, FrontDoorDecision, format_history
+from core.workflow.front_door import (
+    FrontDoorAgent,
+    FrontDoorDecision,
+    RoutedSubQuery,
+    format_history,
+)
 
 
 class _Resp:
@@ -286,12 +291,15 @@ async def test_converse_tool_list_books_failure_degrades_to_placeholder():
 
 
 async def test_dispatch_qa_ignores_tool_field():
-    # dispatch_qa 即使 LLM 误填 tool，也不走工具路径
-    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"MySQL锁","tool":"list_books"}'])
+    # dispatch_qa 即使 LLM 误填 tool，也不走工具路径（仍会触发拆分 LLM，dispatch_qa 必经）
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"MySQL锁","tool":"list_books"}',
+        '{"sub_queries":[{"query":"MySQL锁","action":"dispatch_qa"}]}',
+    ])
     d = await _agent_with_lib(llm, []).run("MySQL有哪些锁")
     assert d.action == "dispatch_qa"
     assert d.clean_query == "MySQL锁"
-    assert llm.calls == 1                    # 不调 2nd
+    assert llm.calls == 2                    # 1st 决策 + 拆分；不调 list_books 的 2nd
 
 
 async def test_front_door_prompt_guards_proper_nouns():
@@ -328,3 +336,64 @@ async def test_front_door_prompt_has_tool_definition_and_redline():
     assert "tool_count_only" in p
     # 红线：内容问题一律 dispatch_qa
     assert "dispatch_qa" in p
+
+
+# ── dispatch_qa 拆分 + 逐子问题路由（Task 3）──────────────────────────
+
+
+async def test_dispatch_qa_splits_into_routed_subqueries():
+    # 整句多主体 → 两个 dispatch_qa 子问题
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"讲讲MySQL锁和Redis持久化"}',  # 1st：门口决策
+        '{"sub_queries":[{"query":"讲讲MySQL锁","action":"dispatch_qa"},'
+        '{"query":"讲讲Redis持久化","action":"dispatch_qa"}]}',                 # 2nd：拆分+路由
+    ])
+    d = await FrontDoorAgent(llm).run("讲讲MySQL锁和Redis持久化", FakeMemory(), None)
+    assert d.action == "dispatch_qa"
+    assert [s.query for s in d.sub_queries] == ["讲讲MySQL锁", "讲讲Redis持久化"]
+    assert all(s.action == "dispatch_qa" for s in d.sub_queries)
+
+
+async def test_mixed_intent_routes_nonqa_to_converse():
+    # "讲讲mysql和编个童话故事" → mysql=dispatch_qa，童话=converse 婉拒
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"讲讲mysql和编个童话故事"}',
+        '{"sub_queries":[{"query":"讲讲MySQL","action":"dispatch_qa"},'
+        '{"query":"编个童话故事","action":"converse","reply":"我是书籍知识库助手，没法编童话故事～"}]}',
+    ])
+    d = await FrontDoorAgent(llm).run("讲讲mysql和编个童话故事", FakeMemory(), None)
+    qa = [s for s in d.sub_queries if s.action == "dispatch_qa"]
+    conv = [s for s in d.sub_queries if s.action == "converse"]
+    assert [s.query for s in qa] == ["讲讲MySQL"]
+    assert conv and "书籍知识库助手" in conv[0].reply
+
+
+async def test_single_subject_yields_one_subquery():
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"MySQL索引有哪些"}',
+        '{"sub_queries":[{"query":"MySQL索引有哪些","action":"dispatch_qa"}]}',
+    ])
+    d = await FrontDoorAgent(llm).run("MySQL索引有哪些", FakeMemory(), None)
+    assert len(d.sub_queries) == 1
+    assert d.sub_queries[0].query == "MySQL索引有哪些"
+
+
+async def test_split_llm_failure_degrades_to_single_subquery():
+    # 拆分 LLM 坏 → 不拆，单元素 = clean_query（绝不阻塞）
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"MySQL索引有哪些"}',
+        "这不是JSON",
+    ])
+    d = await FrontDoorAgent(llm).run("MySQL索引有哪些", FakeMemory(), None)
+    assert len(d.sub_queries) == 1
+    assert d.sub_queries[0].query == "MySQL索引有哪些"
+    assert d.sub_queries[0].action == "dispatch_qa"
+
+
+async def test_converse_path_has_no_subqueries():
+    # 整句 converse（寒暄）→ 不拆，sub_queries 空，行为不变
+    llm = FakeLLM(['{"action":"converse","reply":"你好！我是文档知识库助手～"}'])
+    d = await FrontDoorAgent(llm).run("你好", FakeMemory(), None)
+    assert d.action == "converse"
+    assert d.sub_queries == []
+    assert llm.calls == 1                    # 不触发拆分 LLM
