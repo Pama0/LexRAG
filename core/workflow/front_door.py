@@ -121,8 +121,8 @@ class FrontDoorDecisionModel(BaseModel):
     disable_scope: bool = Field(default=False, description="用户要求全库/不限定时 true（仅 dispatch_qa 有意义）")
 
 
-# 拆分 + 逐子问题路由（单趟，无消歧 probe；Task 5 加按需 probe）
-_SPLIT_PROMPT = """你是知识库助手的子问题规划器。下面的 query 已净化（指代已消解、错别字已纠正）。做两件事：先降噪并按"多主体"拆分，再给每个子问题判一个出口。
+# 拆分 + 逐子问题路由（单趟无歧义直出；有歧义则 Task 5 加按需 probe 消歧再重拆）
+_SPLIT_PROMPT = """你是知识库助手的子问题规划器。下面的 query 已净化（指代已消解、错别字已纠正）。做三件事：先降噪并按"多主体"拆分，再给每个子问题判一个出口，最后判断挂法是否存疑。
 
 第一步 拆分（只以"多主体"为判据，宁可不拆）：
 【拆】同时满足：① 显式并列（A和B、A与B、A、B分别…）；② 两侧话题不同或带"分别/各自"标记；③ 无比较/对比/区别词；④ 无依赖。把每个子问题写成降噪后、能独立检索的自包含短句。
@@ -133,10 +133,21 @@ _SPLIT_PROMPT = """你是知识库助手的子问题规划器。下面的 query 
 - dispatch_qa：对已入库书籍/文档内容的知识提问（默认）。reply 留空。
 - converse：这个子问题根本不是知识提问——是闲聊、寒暄，或要求你创作/写代码/编故事等本系统不做的事。reply 放一句婉拒，如"我是书籍知识库助手，没法编童话故事～"。
 
-只返回 JSON，不要其它任何内容：
-{"sub_queries":[{"query":"降噪自包含子问题","action":"dispatch_qa 或 converse","reply":"converse 时的婉拒话，dispatch_qa 留空"}]}
+第三步 判歧义：若出现"A和B的X"这类修饰语作用域不定、且某挂法的存在性取决于知识（如 X 是否是 A 的概念），置 ambiguous=true，并把【存疑挂法】写进 probe_term（如 "MySQL的gateway"）；否则 ambiguous=false、probe_term 空。
+
+只返回 JSON：
+{"ambiguous":false,"probe_term":"","sub_queries":[{"query":"...","action":"dispatch_qa 或 converse","reply":""}]}
 
 query：{query}"""
+
+
+_RESPLIT_PROMPT = """你之前在拆分"{query}"时，对"{probe_term}"这个挂法拿不准。下面是它在知识库的探测召回。据此判断该挂法是否成立，重新给出最终子问题拆分（消歧后、降噪自包含）。若召回里找不到该挂法主体的相关内容，说明该挂法不成立，应改挂到真正拥有该概念的主体。
+
+探测召回：
+{evidence}
+
+只返回 JSON：
+{"sub_queries":[{"query":"...","action":"dispatch_qa 或 converse","reply":""}]}"""
 
 
 class _RoutedSubQueryModel(BaseModel):
@@ -146,6 +157,8 @@ class _RoutedSubQueryModel(BaseModel):
 
 
 class _SplitResultModel(BaseModel):
+    ambiguous: bool = False
+    probe_term: str = ""
     sub_queries: List[_RoutedSubQueryModel] = Field(default_factory=list)
 
 
@@ -194,9 +207,11 @@ class FrontDoorAgent:
     index_manager 供 converse+list_books 查库藏元数据；None 时元工具路径降级占位文本。
     """
 
-    def __init__(self, llm: LLM, index_manager=None):
+    def __init__(self, llm: LLM, index_manager=None, probe_retriever=None, probe_k: int = 8):
         self.llm = llm
         self.index_manager = index_manager
+        self.probe_retriever = probe_retriever
+        self.probe_k = probe_k
 
     async def run(
         self,
@@ -255,32 +270,66 @@ class FrontDoorAgent:
                 sub_queries=[RoutedSubQuery(original, "dispatch_qa")],
             )
 
+    def _to_subs(self, models) -> list[RoutedSubQuery]:
+        return [
+            RoutedSubQuery(m.query.strip(), m.action, m.reply.strip())
+            for m in models if m.query and m.query.strip()
+        ]
+
     async def _split_and_route(
         self, clean_query: str, book_titles: Optional[list[str]]
     ) -> list[RoutedSubQuery]:
         """clean_query → ≥1 个 RoutedSubQuery。失败/空 → 单元素（不拆，dispatch_qa）。
 
-        Task 5 在此加"按需 probe 消歧"；当前为单趟 LLM 拆分+路由。
+        两趟：趟1 拆分+路由+判歧义；若标 ambiguous 且有 probe 能力，探测存疑挂法
+        （probe_term）一次，把召回证据喂趟2 重拆；任何环节失败都退回趟1 结果，不阻塞。
         """
         fallback = [RoutedSubQuery(clean_query, "dispatch_qa")]
-        prompt = _SPLIT_PROMPT.replace("{query}", clean_query)
+        # 趟1：拆分 + 路由 + 判歧义
         try:
-            resp = await self.llm.acomplete(prompt, response_format={"type": "json_object"})
+            resp = await self.llm.acomplete(
+                _SPLIT_PROMPT.replace("{query}", clean_query),
+                response_format={"type": "json_object"},
+            )
             text = _strip_fences(str(resp)).strip()
             if not text:
                 raise ValueError("empty content")
-            result = _SplitResultModel.model_validate_json(text)
-            subs = [
-                RoutedSubQuery(s.query.strip(), s.action, s.reply.strip())
-                for s in result.sub_queries if s.query and s.query.strip()
-            ]
-            if not subs:
+            r1 = _SplitResultModel.model_validate_json(text)
+            subs1 = self._to_subs(r1.sub_queries)
+            if not subs1:
                 raise ValueError("empty sub_queries")
-            logger.info("front_door split: %d 子问题", len(subs))
-            return subs
+            logger.info("front_door split: %d 子问题", len(subs1))
         except Exception as exc:
-            logger.warning("front_door 拆分失败，降级不拆：%s", exc)
+            logger.warning("front_door 拆分趟1失败，降级不拆：%s", exc)
             return fallback
+
+        # 无歧义 / 无 probe 能力 → 直接用趟1
+        if not (r1.ambiguous and r1.probe_term and self.probe_retriever is not None):
+            return subs1
+
+        # 趟2：probe 存疑挂法 → 据证据重拆（任何失败退回趟1）
+        try:
+            nodes = await self.probe_retriever.retrieve(
+                r1.probe_term, index_manager=self.index_manager,
+                book_titles=book_titles, top_k=self.probe_k,
+            )
+            evidence = "\n".join(
+                f"《{(getattr(n, 'metadata', None) or {}).get('book_title', '?')}》 "
+                + (n.get_content() if hasattr(n, "get_content") else getattr(n, "text", ""))[:120]
+                for n in nodes[:8]
+            ) or "（无召回）"
+            resp2 = await self.llm.acomplete(
+                _RESPLIT_PROMPT.replace("{query}", clean_query)
+                .replace("{probe_term}", r1.probe_term)
+                .replace("{evidence}", evidence),
+                response_format={"type": "json_object"},
+            )
+            r2 = _SplitResultModel.model_validate_json(_strip_fences(str(resp2)).strip())
+            subs2 = self._to_subs(r2.sub_queries)
+            return subs2 or subs1
+        except Exception as exc:
+            logger.warning("front_door 消歧趟2失败，用趟1结果：%s", exc)
+            return subs1
 
     async def _converse_with_tool(self, original: str, d: FrontDoorDecisionModel) -> str:
         """converse + list_books：查库藏元数据 → 2nd LLM 组自然回复。

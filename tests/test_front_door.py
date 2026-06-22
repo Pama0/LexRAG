@@ -417,3 +417,79 @@ async def test_converse_path_has_no_subqueries():
     assert d.action == "converse"
     assert d.sub_queries == []
     assert llm.calls == 1                    # 不触发拆分 LLM
+
+
+# ── 按需 probe 消歧（两趟，Task 5）──────────────────────────────────
+
+
+from llama_index.core.schema import NodeWithScore, TextNode
+
+
+class _FakeProbe:
+    def __init__(self, books):
+        self._books = books
+        self.last_query = None
+        self.calls = 0
+
+    async def retrieve(self, query, *, index_manager, book_titles, top_k):
+        self.calls += 1
+        self.last_query = query
+        return [
+            NodeWithScore(node=TextNode(text="x", id_=str(i), metadata={"book_title": b}))
+            for i, b in enumerate(self._books)
+        ]
+
+
+async def test_no_ambiguity_skips_probe():
+    probe = _FakeProbe(["X"] * 8)
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"讲讲MySQL锁和Redis持久化"}',
+        '{"ambiguous":false,"probe_term":"","sub_queries":'
+        '[{"query":"讲讲MySQL锁","action":"dispatch_qa"},'
+        '{"query":"讲讲Redis持久化","action":"dispatch_qa"}]}',
+    ])
+    d = await FrontDoorAgent(llm, probe_retriever=probe).run(
+        "讲讲MySQL锁和Redis持久化", FakeMemory(), None
+    )
+    assert probe.calls == 0                       # 无歧义不 probe
+    assert len(d.sub_queries) == 2
+
+
+async def test_ambiguity_triggers_probe_then_resplit():
+    # 趟1 标歧义、给存疑挂法 "MySQL的gateway"；probe 召回全 openclaw（MySQL 无 gateway）；
+    # 趟2 据证据把 gateway 只挂 openclaw
+    probe = _FakeProbe(["openclaw"] * 8)
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"讲讲MySQL和openclaw的gateway"}',
+        '{"ambiguous":true,"probe_term":"MySQL的gateway","sub_queries":'
+        '[{"query":"MySQL的gateway","action":"dispatch_qa"},'
+        '{"query":"openclaw的gateway","action":"dispatch_qa"}]}',     # 趟1 暂定
+        '{"sub_queries":[{"query":"讲讲MySQL","action":"dispatch_qa"},'
+        '{"query":"openclaw的gateway","action":"dispatch_qa"}]}',     # 趟2 据证据修正
+    ])
+    d = await FrontDoorAgent(llm, probe_retriever=probe).run(
+        "讲讲MySQL和openclaw的gateway", FakeMemory(), None
+    )
+    assert probe.calls == 1
+    assert probe.last_query == "MySQL的gateway"        # 探的是存疑挂法
+    assert [s.query for s in d.sub_queries] == ["讲讲MySQL", "openclaw的gateway"]
+
+
+async def test_probe_failure_falls_back_to_pass1_split():
+    probe = _BoomProbe()
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"讲讲MySQL和openclaw的gateway"}',
+        '{"ambiguous":true,"probe_term":"MySQL的gateway","sub_queries":'
+        '[{"query":"MySQL的gateway","action":"dispatch_qa"},'
+        '{"query":"openclaw的gateway","action":"dispatch_qa"}]}',
+    ])
+    d = await FrontDoorAgent(llm, probe_retriever=probe).run(
+        "讲讲MySQL和openclaw的gateway", FakeMemory(), None
+    )
+    # probe 炸 → 用趟1 结果，不阻塞
+    assert [s.query for s in d.sub_queries] == ["MySQL的gateway", "openclaw的gateway"]
+
+
+class _BoomProbe:
+    async def retrieve(self, *a, **k):
+        raise RuntimeError("probe down")
