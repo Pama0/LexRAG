@@ -250,7 +250,10 @@ class FrontDoorAgent:
         except Exception as exc:
             # 任何失败（空返回 / 非法 JSON / schema 不符 / 网络）→ 降级 dispatch_qa + 原 query，绝不阻塞
             logger.warning("front_door 解析失败，降级 dispatch_qa + 原 query：%s", exc)
-            return FrontDoorDecision("dispatch_qa", clean_query=original)
+            return FrontDoorDecision(
+                "dispatch_qa", clean_query=original,
+                sub_queries=[RoutedSubQuery(original, "dispatch_qa")],
+            )
 
     async def _split_and_route(
         self, clean_query: str, book_titles: Optional[list[str]]

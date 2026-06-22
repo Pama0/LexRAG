@@ -53,7 +53,10 @@ def _agent(llm):
 
 
 async def test_dispatch_qa_carries_clean_query():
-    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"什么是聚簇索引","reply":""}'])
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"什么是聚簇索引","reply":""}',
+        '{"sub_queries":[{"query":"什么是聚簇索引","action":"dispatch_qa"}]}',
+    ])
     d = await _agent(llm).run("什么是聚簇索引啊")
     assert isinstance(d, FrontDoorDecision)
     assert d.action == "dispatch_qa"
@@ -61,7 +64,10 @@ async def test_dispatch_qa_carries_clean_query():
 
 
 async def test_dispatch_qa_resolves_coreference():
-    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"MySQL索引的应用场景"}'])
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"MySQL索引的应用场景"}',
+        '{"sub_queries":[{"query":"MySQL索引的应用场景","action":"dispatch_qa"}]}',
+    ])
     d = await _agent(llm).run("它的应用场景是什么")
     assert d.action == "dispatch_qa"
     assert d.clean_query == "MySQL索引的应用场景"
@@ -89,14 +95,20 @@ async def test_clarify_carries_reply():
 
 
 async def test_history_passed_to_prompt():
-    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"MySQL索引的应用场景"}'])
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"MySQL索引的应用场景"}',
+        '{"sub_queries":[{"query":"MySQL索引的应用场景","action":"dispatch_qa"}]}',
+    ])
     memory = FakeMemory([_Msg("user", "MySQL索引有哪些"), _Msg("assistant", "B+树索引……")])
     await _agent(llm).run("它的应用场景是什么", memory)
     assert "MySQL索引有哪些" in llm.prompts[0]
 
 
 async def test_selected_books_injected_into_prompt():
-    llm = FakeLLM(['{"action":"dispatch_qa","clean_query":"《openclaw》讲了什么"}'])
+    llm = FakeLLM([
+        '{"action":"dispatch_qa","clean_query":"《openclaw》讲了什么"}',
+        '{"sub_queries":[{"query":"《openclaw》讲了什么","action":"dispatch_qa"}]}',
+    ])
     await _agent(llm).run("这本书讲了什么", None, book_titles=["openclaw"])
     assert "openclaw" in llm.prompts[0]
 
@@ -109,6 +121,14 @@ async def test_parse_failure_degrades_to_dispatch_qa_original(caplog):
     assert d.action == "dispatch_qa"
     assert d.clean_query == "讲讲数据库"
     assert any("front_door 解析失败" in r.getMessage() for r in caplog.records)
+
+
+async def test_parse_failure_degrade_carries_nonempty_subqueries():
+    # Finding 1：决策解析失败降级仍需满足"dispatch_qa 必带 ≥1 sub_query"的不变量
+    llm = FakeLLM(["这不是JSON"])
+    d = await _agent(llm).run("讲讲数据库")
+    assert d.action == "dispatch_qa"
+    assert [s.query for s in d.sub_queries] == ["讲讲数据库"]
 
 
 async def test_empty_content_degrades_to_dispatch_qa():
