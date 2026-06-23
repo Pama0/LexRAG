@@ -69,10 +69,6 @@ class RouteEvent(Event):
     """split → router（意图分类)。纯信号；query 从 ctx 取。"""
 
 
-class StudyPlanEvent(Event):
-    """intent=study_plan → 占位分支（v1 仅验证 dispatch 缝，能力后续实现）。"""
-
-
 class DirectReplyEvent(Event):
     """converse / clarify → 门口直接回复（不检索/不分类）。"""
 
@@ -172,17 +168,15 @@ class DocQueryWorkflow(Workflow):
     @step
     async def route(
         self, ctx: Context, ev: RouteEvent
-    ) -> "QaEvent | StudyPlanEvent | DirectReplyEvent":
+    ) -> "QaEvent | DirectReplyEvent":
         sub_texts = await ctx.store.get("sub_queries")     # split_query 存的 list[str]
-        clean_query = await ctx.store.get("clean_query")
 
         rr = await self.front_door.route(sub_texts)    # _RouteResultModel
         routes = rr.routes
 
-        # 聚合优先级：任一 dispatch_qa → QA；否则 study_plan → converse。
-        # 工作态落 ctx：action 供观测；clean_query 是门口横切产物，绝不写会话记忆。
+        # 聚合：任一 dispatch_qa → QA；否则全 converse。clean_query 是门口横切产物，绝不写会话记忆。
         if any(r.action == "dispatch_qa" for r in routes):
-            # 非 qa 子问题降为 converse 装饰（reply 留空，由后续兜底处理）
+            # 非 qa 子问题降为 converse 装饰（reply 留空，由合成 agent 现写）
             subs = [
                 RoutedSubQuery(r.query, "dispatch_qa") if r.action == "dispatch_qa"
                 else RoutedSubQuery(r.query, "converse")
@@ -192,24 +186,11 @@ class DocQueryWorkflow(Workflow):
             await ctx.store.set("sub_queries", subs)       # 覆写成 list[RoutedSubQuery]
             return QaEvent()
 
-        study = next((r for r in routes if r.action == "study_plan"), None)
-        if study is not None:
-            await ctx.store.set("action", "dispatch_study_plan")
-            await ctx.store.set("clean_query", study.query or clean_query)
-            return StudyPlanEvent()
-
-        # 全 converse —— reply 留空，由后续兜底处理
+        # 全 converse —— reply 留空，由合成 agent 现写
         await ctx.store.set("action", "converse")
         return DirectReplyEvent(reply="", action="converse")
 
     # ── 分支：dispatch 到 QA capability（薄委托），各分支统一收成 FinalizeEvent ──
-    @step
-    async def study_plan_branch(self, ctx: Context, ev: StudyPlanEvent) -> FinalizeEvent:
-        # TODO: 接入 StudyPlan capability（拆解→排序→渲染，产 plan 产物落 DB）。
-        return FinalizeEvent(
-            answer="学习计划能力还在建设中，目前仅支持文档问答。", source_nodes=[]
-        )
-
     @step
     async def direct_reply_branch(
         self, ctx: Context, ev: DirectReplyEvent

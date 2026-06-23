@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Literal, Optional
 
 from llama_index.core.agent import FunctionAgent
@@ -19,6 +20,14 @@ ROUTE_PROMPT = load_prompt("route_prompt")
 # 门口消指代只取最近几轮历史，别灌全量（省 token，也避免远古上下文误导）
 MAX_HISTORY_MSGS = 6
 
+@dataclass
+class RoutedSubQuery:
+    """拆分后的一个子问题及其路由出口。route → qa_capability 的活契约。"""
+    query: str
+    action: str = "dispatch_qa"      # dispatch_qa | converse
+    reply: str = ""                  # converse 婉拒文案（dispatch_qa 时空）
+
+
 class _CleanResultModel(BaseModel):
     is_missing_info: bool = Field(default=False,description="是否缺失信息")
     clean_query: str = Field(default="", description="净化后的自包含 query")
@@ -28,7 +37,7 @@ class _CleanResultModel(BaseModel):
 class _RouteItemModel(BaseModel):
     """单个子问题的路由出口（schema 对齐 route_prompt.md）。"""
     query: str = Field(default="", description="原样回填的子问题")
-    action: Literal["dispatch_qa", "study_plan", "converse", "clarify"] = Field(
+    action: Literal["dispatch_qa", "converse", "clarify"] = Field(
         default="dispatch_qa", description="该子问题的出口"
     )
 
