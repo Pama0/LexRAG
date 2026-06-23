@@ -110,6 +110,10 @@ faithfulness / answer_relevancy）+ 成本（时延 s/条、tokens/条）。
 `merge_golden.py` / `generate_testset.py` 注释里「供 run_eval 使用 / 读作」改为指向 compare
 （仅注释措辞，无逻辑改动）。
 
+`docs/EVAL_OVERVIEW.md`（活文档）：删 run_eval 单系统入口、分类准确率小节与架构图里的
+run_eval 行；改为两路线（workflow vs agent）+ ragas 质量 + 成本口径。历史 specs/plans
+（带日期的归档）不动。
+
 ## 验证
 
 - smoke：`python -m eval.harness.compare --testset eval/dataset/golden.jsonl --limit 2`
