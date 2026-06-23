@@ -1,0 +1,2721 @@
+﻿idx,category,scope,user_input,reference,query_style,query_length,persona_name,reference_contexts
+1,retrievable,,MySQL 服务器进程的默认名称是什么？,MySQL 服务器进程的默认名称为 mysqld。,MISSPELLED,SHORT,chinese_tech_reader,"名称，这个名称是编写程序的人自己定义的，比如我们启动的MySQL 服务器进程的默认名称为mysqld ， 而我们
+
+常用的MySQL 客户端进程的默认名称为mysql 。"
+2,retrievable,,InnoDB作为默认存储引擎时，如果命令行和配置文件中同时指定了不同的存储引擎，最终会使用哪个？,如果同一个启动选项既出现在命令行中，又出现在配置文件中，那么以命令行中的启动选项为准。例如，配置文件中设置default-storage-engine=InnoDB，而命令行指定--default-storage-engine=MyISAM，则最终default-storage-engine的值为MyISAM。,WEB_SEARCH_LIKE,MEDIUM,chinese_tech_reader,"在命令行上指定的绝大部分启动选项都可以放到配置文件中，但是有一些选项是专门为命令行设计的，比方说
+
+defaults-extra-file 、defaults-file 这样的选项本身就是为了指定配置文件路径的，再放在配置文件中使用
+
+就没啥意义了。剩下的一些只能用在命令行上而不能用到配置文件中的启动选项就不一一列举了，用到的时候再
+
+提哈（本书中基本用不到，有兴趣的到官方文档看哈）。
+
+另外有一点需要特别注意，如果同一个启动选项既出现在命令行中，又出现在配置文件中，那么以命令行中的启
+
+动选项为准！比如我们在配置文件中写了：
+
+[server]
+
+default-storage-engine=InnoDB
+
+而我们的启动命令是：
+
+mysql.server start --default-storage-engine=MyISAM
+
+那最后default-storage-engine 的值就是MyISAM ！"
+3,retrievable,,在MySQL中，default_tmp_storage_engine这个系统变量的默认值是什么？,default_tmp_storage_engine的默认值是InnoDB。,MISSPELLED,LONG,chinese_tech_reader,"| default_authentication_plugin | mysql_native_password |
+
+| default_password_lifetime     | 0                     |
+
+| default_storage_engine        | InnoDB                |
+
+| default_tmp_storage_engine    | InnoDB                |
+
+| default_week_format           | 0                     |
+
++-------------------------------+-----------------------+
+
+5 rows in set (0.01 sec)
+
+mysql>
+
+这样就查出了所有以default 开头的系统变量的值。"
+4,retrievable,,Handler_update 状态变量的作用是什么？,Handler_update 表示已经更新了多少行记录。,PERFECT_GRAMMAR,SHORT,chinese_tech_reader,"为了让我们更好的了解服务器程序的运行情况，MySQL 服务器程序中维护了好多关于程序运行状态的变量，它们
+
+被称为状态变量。比方说Threads_connected 表示当前有多少客户端与服务器建立了连接，Handler_update
+
+表示已经更新了多少行记录吧啦吧啦，像这样显示服务器程序状态信息的状态变量还有好几百个，我们就不一
+
+一唠叨了，等遇到了会详细说它们的作用的。
+
+由于状态变量是用来显示服务器程序运行状况的，所以它们的值只能由服务器程序自己来设置，我们程序员是
+
+不能设置的。与系统变量类似，状态变量也有GLOBAL 和SESSION 两个作用范围的，所以查看状态变量的语
+
+句可以这么写：
+
+SHOW [GLOBAL|SESSION] STATUS [LIKE 匹配的模式];
+
+类似的，如果我们不写明作用范围，默认的作用范围是SESSION ，比方说这样：
+
+mysql> SHOW STATUS LIKE 'thread%';
+
++-------------------+-------+
+
+| Variable_name     | Value |
+
++-------------------+-------+
+
+| Threads_cached    | 0     |
+
+| Threads_connected | 1     |
+
+| Threads_created   | 1     |
+
+| Threads_running   | 1     |
+
++-------------------+-------+
+
+4 rows in set (0.00 sec)
+
+mysql>
+
+所有以Thread 开头的SESSION 作用范围的状态变量就都被展示出来了。"
+5,,,GBK字符集与GB2312字符集在编码方式上有什么不同？,GBK字符集只是在收录字符范围上对GB2312字符集作了扩充，编码方式上兼容GB2312。,MISSPELLED,MEDIUM,chinese_tech_reader,"不幸的是，这个世界太大了，不同的人制定出了好多种字符集，它们表示的字符范围和用到的编码规则可能都
+
+不一样。我们看一下一些常用字符集的情况：
+
+ASCII 字符集
+
+共收录128个字符，包括空格、标点符号、数字、大小写字母和一些不可见字符。由于总共才128个字符，所
+
+以可以使用1个字节来进行编码，我们看一些字符的编码方式：
+
+'L' ->  01001100（十六进制：0x4C，十进制：76）
+
+'M' ->  01001101（十六进制：0x4D，十进制：77）
+
+ISO 8859-1 字符集
+
+共收录256个字符，是在ASCII 字符集的基础上又扩充了128个西欧常用字符(包括德法两国的字母)，也可以
+
+使用1个字节来进行编码。这个字符集也有一个别名latin1 。
+
+GB2312 字符集
+
+收录了汉字以及拉丁字母、希腊字母、日文平假名及片假名字母、俄语西里尔字母。其中收录汉字6763个，
+
+其他文字符号682个。同时这种字符集又兼容ASCII 字符集，所以在编码方式上显得有些奇怪：
+
+如果该字符在ASCII 字符集中，则采用1字节编码。
+
+否则采用2字节编码。
+
+这种表示一个字符需要的字节数可能不同的编码方式称为变长编码方式。比方说字符串'爱u' ，其
+
+中'爱' 需要用2个字节进行编码，编码后的十六进制表示为0xCED2 ，'u' 需要用1个字节进行编码，
+
+编码后的十六进制表示为0x75 ，所以拼合起来就是0xCED275 。
+
+小贴士：
+
+我们怎么区分某个字节代表一个单独的字符还是代表某个字符的一部分呢？别忘了`ASCII`字
+
+符集只收录128个字符，使用0～127就可以表示全部字符，所以如果某个字节是在0～127之内
+
+的，就意味着一个字节代表一个单独的字符，否则就是两个字节代表一个单独的字符。
+
+GBK 字符集
+
+GBK 字符集只是在收录字符范围上对GB2312 字符集作了扩充，编码方式上兼容GB2312 。
+
+utf8 字符集
+
+收录地球上能想到的所有字符，而且还在不断扩充。这种字符集兼容ASCII 字符集，采用变长编码方式，编
+
+码一个字符需要使用1～4个字节，比方说这样：
+
+'L' ->  01001100（十六进制：0x4C）
+
+'啊' ->  111001011001010110001010（十六进制：0xE5958A）
+
+小贴士：
+
+其实准确的说，utf8只是Unicode字符集的一种编码方案，Unicode字符集可以采用utf8、utf1"
+6,,,MySQL中比较规则gbk_chinese_ci和gbk_bin有什么区别？,gbk_chinese_ci不区分大小写，而gbk_bin直接比较字符编码，区分大小写。,WEB_SEARCH_LIKE,SHORT,chinese_tech_reader,"结束了字符集的漫游，我们把视角再次聚焦到比较规则，比较规则的作用通常体现比较字符串大小的表达式以
+
+及对某个字符串列进行排序中，所以有时候也称为排序规则。比方说表t 的列col 使用的字符集是gbk ，使用
+
+的比较规则是gbk_chinese_ci ，我们向里边插入几条记录：
+
+mysql> INSERT INTO t(col) VALUES('a'), ('b'), ('A'), ('B');
+
+Query OK, 4 rows affected (0.00 sec)
+
+Records: 4  Duplicates: 0  Warnings: 0
+
+mysql>
+
+我们查询的时候按照t 列排序一下：
+
+mysql> SELECT * FROM t ORDER BY col;
+
++------+
+
+| col  |
+
++------+
+
+| a    |
+
+| A    |
+
+| b    |
+
+| B    |
+
+| 我   |
+
++------+
+
+5 rows in set (0.00 sec)
+
+可以看到在默认的比较规则gbk_chinese_ci 中是不区分大小写的，我们现在把列col 的比较规则修改为
+
+gbk_bin ：
+
+mysql> ALTER TABLE t MODIFY col VARCHAR(10) COLLATE gbk_bin;
+
+Query OK, 5 rows affected (0.02 sec)
+
+Records: 5  Duplicates: 0  Warnings: 0
+
+由于gbk_bin 是直接比较字符的编码，所以是区分大小写的，我们再看一下排序后的查询结果：
+
+mysql> SELECT * FROM t ORDER BY s;
+
++------+
+
+| s    |
+
++------+
+
+| A    |
+
+| B    |
+
+| a    |
+
+| b    |
+
+| 我   |
+
++------+
+
+5 rows in set (0.00 sec)
+
+mysql>
+
+所以如果以后大家在对字符串做比较或者对某个字符串列做排序操作时没有得到想象中的结果，需要思考一下是
+
+不是比较规则的问题～
+
+小贴士：
+
+列`col`中各个字符在使用gbk字符集编码后对应的数字如下：
+
+'A' -> 65 （十进制）
+
+'B' -> 66 （十进制）
+
+'a' -> 97 （十进制）
+
+'b' -> 98 （十进制）
+
+'我' -> 25105 （十进制）"
+7,,,InnoDB 在从磁盘读取数据时，是一次读取一条记录还是以页为单位？,InnoDB 采取的方式是将数据划分为若干个页，以页作为磁盘和内存之间交互的基本单位，页的大小一般为 16 KB，一次最少从磁盘中读取16KB的内容到内存中。,MISSPELLED,MEDIUM,chinese_tech_reader,"InnoDB 是一个将表中的数据存储到磁盘上的存储引擎，所以即使关机后重启我们的数据还是存在的。而真正处
+
+理数据的过程是发生在内存中的，所以需要把磁盘中的数据加载到内存中，如果是处理写入或修改请求的话，还
+
+需要把内存中的内容刷新到磁盘上。而我们知道读写磁盘的速度非常慢，和内存读写差了几个数量级，所以当我
+
+们想从表中获取某些记录时，InnoDB 存储引擎需要一条一条的把记录从磁盘上读出来么？不，那样会慢死，
+
+InnoDB 采取的方式是：将数据划分为若干个页，以页作为磁盘和内存之间交互的基本单位，InnoDB中页的大小
+
+一般为 16 KB。也就是在一般情况下，一次最少从磁盘中读取16KB的内容到内存中，一次最少把内存中的16KB
+
+内容刷新到磁盘中。"
+8,retrievable,,Mysql行格式的存储方式有什么不同？,Mysql行格式的存储方式各有不同，具体内容需要查看演示表中的数据。,MISSPELLED,MEDIUM,chinese_tech_reader,"mysql>
+
+演示表的内容也填充好了，现在我们就来看看各个行格式下的存储方式到底有啥不同吧～"
+9,,,在InnoDB中，COMPACT行格式与其他行格式（如Dynamic和Compressed）在处理行溢出数据时有何不同？,COMPACT行格式在记录的真实数据处存储字符串的前768个字节，而Dynamic和Compressed行格式不会存储前768个字节，而是把所有的字节都存储到其他页面中，只在记录的真实数据处存储其他页面的地址。,PERFECT_GRAMMAR,MEDIUM,chinese_tech_reader,"1. 页是MySQL 中磁盘和内存交互的基本单位，也是MySQL 是管理存储空间的基本单位。
+
+2. 指定和修改行格式的语法如下：
+
+CREATE TABLE 表名 (列的信息) ROW_FORMAT=行格式名称
+
+ALTER TABLE 表名 ROW_FORMAT=行格式名称
+
+3. InnoDB 目前定义了4种行格式
+
+COMPACT行格式
+
+具体组成如图：
+
+Redundant行格式
+
+具体组成如图：
+
+Dynamic和Compressed行格式
+
+这两种行格式类似于COMPACT行格式，只不过在处理行溢出数据时有点儿分歧，它们不会在记录的真实
+
+数据处存储字符串的前768个字节，而是把所有的字节都存储到其他页面中，只在记录的真实数据处存
+
+储其他页面的地址。
+
+另外，Compressed 行格式会采用压缩算法对页面进行压缩。
+
+4. 一个页一般是16KB ，当记录中的数据太多，当前页放不下的时候，会把多余的数据存储到其他页中，这种
+
+现象称为行溢出。"
+10,,,PAGE_LAST_INSERT在InnoDB的Page Header中存储什么信息？,PAGE_LAST_INSERT存储最后插入记录的位置。,PERFECT_GRAMMAR,SHORT,chinese_tech_reader,"设计InnoDB 的大叔们为了能得到一个数据页中存储的记录的状态信息，比如本页中已经存储了多少条记录，第
+
+一条记录的地址是什么，页目录中存储了多少个槽等等，特意在页中定义了一个叫Page Header 的部分，它是
+
+页结构的第二部分，这个部分占用固定的56 个字节，专门存储各种状态信息，具体各个字节都是干嘛的看下
+
+表：
+
+名称
+
+占用空
+
+间大小
+
+描述
+
+PAGE_N_DIR_SLOTS
+
+2 字节
+
+在页目录中的槽数量
+
+PAGE_HEAP_TOP
+
+2 字节
+
+还未使用的空间最小地址，也就是说从该地址之后就是Free Space
+
+PAGE_N_HEAP
+
+2 字节
+
+本页中的记录的数量（包括最小和最大记录以及标记为删除的记录）
+
+PAGE_FREE
+
+2 字节
+
+第一个已经标记为删除的记录地址（各个已删除的记录通过next_record 也会组成一个单链
+
+表，这个单链表中的记录可以被重新利用）
+
+PAGE_GARBAGE
+
+2 字节
+
+已删除记录占用的字节数
+
+PAGE_LAST_INSERT
+
+2 字节
+
+最后插入记录的位置
+
+PAGE_DIRECTION
+
+2 字节
+
+记录插入的方向
+
+PAGE_N_DIRECTION
+
+2 字节
+
+一个方向连续插入的记录数量
+
+PAGE_N_RECS
+
+2 字节
+
+该页中记录的数量（不包括最小和最大记录以及被标记为删除的记录）
+
+PAGE_MAX_TRX_ID
+
+8 字节
+
+修改当前页的最大事务ID，该值仅在二级索引中定义
+
+PAGE_LEVEL
+
+2 字节
+
+当前页在B+树中所处的层级
+
+PAGE_INDEX_ID
+
+8 字节
+
+索引ID，表示当前页属于哪个索引
+
+PAGE_BTR_SEG_LEAF
+
+10 字节
+
+B+树叶子段的头部信息，仅在B+树的Root页定义
+
+PAGE_BTR_SEG_TOP
+
+10 字节
+
+B+树非叶子段的头部信息，仅在B+树的Root页定义
+
+如果大家认真看过前边的文章，从PAGE_N_DIR_SLOTS 到PAGE_LAST_INSERT 以及PAGE_N_RECS 的意思大家一定
+
+是清楚的，如果不清楚，对不起，你应该回头再看一遍前边的文章。剩下的状态信息看不明白不要着急，饭要一
+
+口一口吃，东西要一点一点学（一定要稍安勿躁哦，不要被这些名词吓到）。在这里我们先唠叨一下
+
+PAGE_DIRECTION 和PAGE_N_DIRECTION 的意思：
+
+PAGE_DIRECTION
+
+假如新插入的一条记录的主键值比上一条记录的主键值大，我们说这条记录的插入方向是右边，反之则是左"
+11,retrievable,,LSN 在 InnoDB 中有什么用？,LSN 用于校验页的完整性，在页的首部和尾部都会存储页面最后修改时对应的 LSN 值，如果首尾的 LSN 值校验不成功，说明同步过程出现了问题。,POOR_GRAMMAR,SHORT,chinese_tech_reader,"1. InnoDB为了不同的目的而设计了不同类型的页，我们把用于存放记录的页叫做数据页。
+
+2. 一个数据页可以被大致划分为7个部分，分别是
+
+File Header ，表示页的一些通用信息，占固定的38字节。
+
+Page Header ，表示数据页专有的一些信息，占固定的56个字节。
+
+Infimum + Supremum ，两个虚拟的伪记录，分别表示页中的最小和最大记录，占固定的26 个字节。
+
+User Records ：真实存储我们插入的记录的部分，大小不固定。
+
+Free Space ：页中尚未使用的部分，大小不确定。
+
+Page Directory ：页中的某些记录相对位置，也就是各个槽在页面中的地址偏移量，大小不固定，插
+
+入的记录越多，这个部分占用的空间越多。
+
+File Trailer ：用于检验页是否完整的部分，占用固定的8个字节。
+
+3. 每个记录的头信息中都有一个next_record 属性，从而使页中的所有记录串联成一个单链表。
+
+4. InnoDB 会为把页中的记录划分为若干个组，每个组的最后一个记录的地址偏移量作为一个槽，存放在
+
+Page Directory 中，所以在一个页中根据主键查找记录是非常快的，分为两步：
+
+通过二分法确定该记录所在的槽。
+
+通过记录的next_record属性遍历该槽所在的组中的各个记录。
+
+5. 每个数据页的File Header 部分都有上一个和下一个页的编号，所以所有的数据页会组成一个双链表。
+
+6. 为保证从内存中同步到磁盘的页的完整性，在页的首部和尾部都会存储页中数据的校验和和页面最后修改时
+
+对应的LSN 值，如果首部和尾部的校验和和LSN 值校验不成功的话，就说明同步过程出现了问题。"
+12,,,page_no 在索引目录项中代表什么？,page_no 代表页号，是目录项的一部分，用于标识数据页。,WEB_SEARCH_LIKE,SHORT,chinese_tech_reader,"然后再把主键值为4 的记录插入到页10 中，这个过程的示意图如下：
+
+这个过程表明了在对页中的记录进行增删改操作的过程中，我们必须通过一些诸如记录移动的操作来始终保
+
+证这个状态一直成立：下一个数据页中用户记录的主键值必须大于上一个页中用户记录的主键值。这个过程
+
+我们也可以称为页分裂。
+
+给所有的页建立一个目录项。
+
+由于数据页的编号可能并不是连续的，所以在向index_demo 表中插入许多条记录后，可能是这样的效果：
+
+因为这些16KB 的页在物理存储上可能并不挨着，所以如果想从这么多页中根据主键值快速定位某些记录所
+
+在的页，我们需要给它们做个目录，每个页对应一个目录项，每个目录项包括下边两个部分：
+
+页的用户记录中最小的主键值，我们用key 来表示。
+
+页号，我们用page_no 表示。
+
+所以我们为上边几个页做好的目录就像这样子：
+
+以页28 为例，它对应目录项2 ，这个目录项中包含着该页的页号28 以及该页中用户记录的最小主键
+
+值5 。我们只需要把几个目录项在物理存储器上连续存储，比如把他们放到一个数组里，就可以实现根
+
+据主键值快速查找某条记录的功能了。比方说我们想找主键值为20 的记录，具体查找过程分两步：
+
+先从目录项中根据二分法快速确定出主键值为20 的记录在目录项3 中（因为 12 < 20 < 209 ），它对
+
+应的页是页9 。
+
+再根据前边说的在页中查找记录的方式去页9 中定位具体的记录。
+
+至此，针对数据页做的简易目录就搞定了。不过忘了说了，这个目录有一个别名，称为索引。"
+13,,,B+ 树在 InnoDB 中如何帮助快速定位存储目录项记录的页？,"B+ 树通过为存储目录项记录的页生成更高级的目录，形成多级目录结构，从而根据主键值快速定位存储目录项记录的页。例如，页33 中的两条记录分别代表页30 和页32，如果主键值在[1, 320) 之间，则到页30 中查找更详细的目录项记录，否则到页32 中查找。",POOR_GRAMMAR,LONG,chinese_tech_reader,"在一个存储用户记录的页中通过主键值定位一条用户记录的方式已经说过200遍了，你再不会我就，我就，
+
+我就求你到上一篇唠叨数据页结构的文章中多看几遍，求你了～
+
+那么问题来了，在这个查询步骤的第1步中我们需要定位存储目录项记录的页，但是这些页在存储空间中也可能
+
+不挨着，如果我们表中的数据非常多则会产生很多存储目录项记录的页，那我们怎么根据主键值快速定位一个
+
+存储目录项记录的页呢？其实也简单，为这些存储目录项记录的页再生成一个更高级的目录，就像是一个多级
+
+目录一样，大目录里嵌套小目录，小目录里才是实际的数据，所以现在各个页的示意图就是这样子：
+
+如图，我们生成了一个存储更高级目录项的页33 ，这个页中的两条记录分别代表页30 和页32 ，如果用户记录
+
+的主键值在[1, 320) 之间，则到页30 中查找更详细的目录项记录，如果主键值不小于320 的话，就到页32
+
+中查找更详细的目录项记录。不过这张图好漂亮喔，随着表中记录的增加，这个目录的层级会继续增加，如果
+
+简化一下，那么我们可以用下边这个图来描述它：
+
+这玩意儿像不像一个倒过来的树呀，上头是树根，下头是树叶！其实这是一种组织数据的形式，或者说是一种
+
+数据结构，它的名称是B+ 树。
+
+小贴士：
+
+为啥叫`B+`呢，`B`树是个啥？喔对不起，这不是我们讨论的范围，你可以去找一本数据结构或算法的
+
+书来看。什么？数据结构的书看不懂？等我～
+
+不论是存放用户记录的数据页，还是存放目录项记录的数据页，我们都把它们存放到B+ 树这个数据结构中了，
+
+所以我们也称这些数据页为节点。从图中可以看出来，我们的实际用户记录其实都存放在B+树的最底层的节点
+
+上，这些节点也被称为叶子节点或叶节点，其余用来存放目录项的节点称为非叶子节点或者内节点，其
+
+中B+ 树最上边的那个节点也称为根节点。
+
+从图中可以看出来，一个B+ 树的节点其实可以分成好多层，设计InnoDB 的大叔们为了讨论方便，规定最下边的
+
+那层，也就是存放我们用户记录的那层为第0 层，之后依次往上加。之前的讨论我们做了一个非常极端的假设：
+
+存放用户记录的页最多存放3条记录，存放目录项记录的页最多存放4条记录。"
+14,,,在idx_name_birthday_phone_number索引的B+树中，如果name列的值相同，接下来按照哪一列排序？,如果name列的值相同，则按照birthday列的值进行排序。,POOR_GRAMMAR,MEDIUM,chinese_tech_reader,"节点中目录项记录的页号信息我们用箭头来代替，在记录结构中只保留name 、birthday 、phone_number 、
+
+id 这四个列的真实数据值，所以示意图就长这样（留心的同学看出来了，这其实和《高性能MySQL》里举的例
+
+子的图差不多，我觉得这个例子特别好，所以就借鉴了一下）：
+
+为了方便大家理解，我们特意标明了哪些是内节点，哪些是叶子节点。再次强调一下，内节点中存储的是目录项
+
+记录，叶子节点中存储的是用户记录（由于不是聚簇索引，所以用户记录是不完整的，缺少country 列的
+
+值）。从图中可以看出，这个idx_name_birthday_phone_number 索引对应的B+ 树中页面和记录的排序方式就是
+
+这样的：
+
+先按照name 列的值进行排序。
+
+如果name 列的值相同，则按照birthday 列的值进行排序。
+
+如果birthday 列的值也相同，则按照phone_number 的值进行排序。
+
+这个排序方式十分、特别、非常、巨、very very very重要，因为只要页面和记录是排好序的，我们就可以通过二
+
+分法来快速定位查找。下边的内容都仰仗这个图了，大家对照着图理解。"
+15,,,为什么搜索条件中必须出现左边的列才可以使用到这个B+树索引？比如只使用birthday列就不行？,因为B+树的数据页和记录先是按照name列的值排序的，在name列的值相同的情况下才使用birthday列进行排序，所以name列的值不同的记录中birthday的值可能是无序的。跳过name列直接根据birthday的值去查找无法利用索引的有序性。,MISSPELLED,MEDIUM,chinese_tech_reader,"其实在我们的搜索语句中也可以不用包含全部联合索引中的列，只包含左边的就行，比方说下边的查询语句：
+
+SELECT * FROM person_info WHERE name = 'Ashburn';
+
+或者包含多个左边的列也行：
+
+SELECT * FROM person_info WHERE name = 'Ashburn' AND birthday = '1990-09-27';
+
+那为什么搜索条件中必须出现左边的列才可以使用到这个B+ 树索引呢？比如下边的语句就用不到这个B+ 树索引
+
+么？
+
+SELECT * FROM person_info WHERE birthday = '1990-09-27';
+
+是的，的确用不到，因为B+ 树的数据页和记录先是按照name 列的值排序的，在name 列的值相同的情况下才使
+
+用birthday 列进行排序，也就是说name 列的值不同的记录中birthday 的值可能是无序的。而现在你跳过
+
+name 列直接根据birthday 的值去查找，臣妾做不到呀～ 那如果我就想在只使用birthday 的值去通过B+ 树索
+
+引进行查找咋办呢？这好办，你再对birthday 列建一个B+ 树索引就行了，创建索引的语法不用我唠叨了吧。
+
+但是需要特别注意的一点是，如果我们想使用联合索引中尽可能多的列，搜索条件中的各个列必须是联合索引中
+
+从最左边连续的列。比方说联合索引idx_name_birthday_phone_number 中列的定义顺序是name 、
+
+birthday 、phone_number ，如果我们的搜索条件中只有name 和phone_number ，而没有中间的birthday ，
+
+比方说这样：
+
+SELECT * FROM person_info WHERE name = 'Ashburn' AND phone_number = '15123983239';
+
+这样只能用到name 列的索引，birthday 和phone_number 的索引就用不上了，因为name 值相同的记录先按照
+
+birthday 的值进行排序，birthday 值相同的记录才按照phone_number 值进行排序。"
+16,,,MySQL中MEDIUMINT相比INT在索引性能上有哪些优势？,MEDIUMINT相比INT占用的存储空间更小，在查询时进行的比较操作更快，索引占用的存储空间更少，在一个数据页内可以放下更多的记录，从而减少磁盘I/O带来的性能损耗，并且可以把更多的数据页缓存在内存中，加快读写效率。,WEB_SEARCH_LIKE,MEDIUM,chinese_tech_reader,"我们在定义表结构的时候要显式的指定列的类型，以整数类型为例，有TINYINT 、MEDIUMINT 、INT 、BIGINT
+
+这么几种，它们占用的存储空间依次递增，我们这里所说的类型大小指的就是该类型表示的数据范围的大小。
+
+能表示的整数范围当然也是依次递增，如果我们想要对某个整数列建立索引的话，在表示的整数范围允许的情况
+
+下，尽量让索引列使用较小的类型，比如我们能使用INT 就不要使用BIGINT ，能使用MEDIUMINT 就不要使用
+
+INT ～ 这是因为：
+
+数据类型越小，在查询时进行的比较操作越快（这是CPU层次的东东）
+
+数据类型越小，索引占用的存储空间就越少，在一个数据页内就可以放下更多的记录，从而减少磁盘I/O 带
+
+来的性能损耗，也就意味着可以把更多的数据页缓存在内存中，从而加快读写效率。
+
+这个建议对于表的主键来说更加适用，因为不仅是聚簇索引中会存储主键值，其他所有的二级索引的节点处都会
+
+存储一份记录的主键值，如果主键适用更小的数据类型，也就意味着节省更多的存储空间和更高效的I/O 。"
+17,,,InnoDB 和 MyISAM 这两个存储引擎是如何把表存储在文件系统上的？,像 InnoDB 和 MyISAM 这样的存储引擎都是把表存储在文件系统上的。当我们想读取数据时，这些存储引擎会从文件系统中把数据读出来返回给我们；当我们想写入数据时，这些存储引擎会把这些数据又写回文件系统。,MISSPELLED,LONG,chinese_tech_reader,"我们知道像InnoDB 、MyISAM 这样的存储引擎都是把表存储在磁盘上的，而操作系统用来管理磁盘的那个东东又
+
+被称为文件系统，所以用专业一点的话来表述就是：像 InnoDB 、 MyISAM 这样的存储引擎都是把表存储在文
+
+件系统上的。当我们想读取数据的时候，这些存储引擎会从文件系统中把数据读出来返回给我们，当我们想写入
+
+数据的时候，这些存储引擎会把这些数据又写回文件系统。本章就是要唠叨一下InnoDB 和MyISAM 这两个存储引
+
+擎的数据如何在文件系统中存储的。"
+18,,,MySQL的数据目录由哪个系统变量指定？,MySQL的数据目录由系统变量datadir指定。,PERFECT_GRAMMAR,SHORT,chinese_tech_reader,"那说了半天，到底MySQL 把数据都存到哪个路径下呢？其实数据目录对应着一个系统变量datadir ，我们在使
+
+用客户端与服务器建立连接之后查看这个系统变量的值就可以了：
+
+mysql> SHOW VARIABLES LIKE 'datadir';
+
++---------------+-----------------------+
+
+| Variable_name | Value                 |
+
++---------------+-----------------------+
+
+| datadir       | /usr/local/var/mysql/ |
+
++---------------+-----------------------+
+
+1 row in set (0.00 sec)
+
+从结果中可以看出，在我的计算机上MySQL 的数据目录就是/usr/local/var/mysql/ ，你用你的计算机试试呗～"
+19,,,information_schema 是啥数据库？,information_schema 是 MySQL 自带的系统数据库之一。,POOR_GRAMMAR,MEDIUM,chinese_tech_reader,"每当我们使用CREATE DATABASE 数据库名语句创建一个数据库的时候，在文件系统上实际发生了什么呢？其实
+
+很简单，每个数据库都对应数据目录下的一个子目录，或者说对应一个文件夹，我们每当我们新建一个数据库
+
+时，MySQL 会帮我们做这两件事儿：
+
+1. 在数据目录下创建一个和数据库名同名的子目录（或者说是文件夹）。
+
+2. 在该与数据库名同名的子目录下创建一个名为db.opt 的文件，这个文件中包含了该数据库的各种属性，比
+
+方说该数据库的字符集和比较规则是个啥。
+
+比方说我们查看一下在我的计算机上当前有哪些数据库：
+
+mysql> SHOW DATABASES;
+
++--------------------+
+
+| Database           |
+
++--------------------+
+
+| information_schema |
+
+| charset_demo_db    |
+
+| dahaizi            |
+
+| mysql              |
+
+| performance_schema |
+
+| sys                |
+
+| xiaohaizi          |
+
++--------------------+
+
+7 rows in set (0.00 sec)
+
+可以看到在我的计算机上当前有7个数据库，其中charset_demo_db 、dahaizi 和xiaohaizi 数据库是我们自定
+
+义的，其余4个数据库是属于MySQL自带的系统数据库。我们再看一下我的计算机上的数据目录下的内容：
+
+.
+
+├── auto.cnf
+
+├── ca-key.pem
+
+├── ca.pem
+
+├── charset_demo_db
+
+├── client-cert.pem
+
+├── client-key.pem
+
+├── dahaizi
+
+├── ib_buffer_pool
+
+├── ib_logfile0
+
+├── ib_logfile1
+
+├── ibdata1
+
+├── ibtmp1
+
+├── mysql
+
+├── performance_schema
+
+├── private_key.pem
+
+├── public_key.pem
+
+├── server-cert.pem
+
+├── server-key.pem
+
+├── sys
+
+├── xiaohaizideMacBook-Pro.local.err"
+20,,,SSL 文件在 MySQL 中有什么用？,SSL 和 RSA 证书和密钥文件主要是为了客户端和服务器安全通信而创建的一些文件。,POOR_GRAMMAR,MEDIUM,chinese_tech_reader,"除了我们上边说的这些用户自己存储的数据以外，数据目录下还包括为了更好运行程序的一些额外文件，主要
+
+包括这几种类型的文件：
+
+服务器进程文件。
+
+我们知道每运行一个MySQL 服务器程序，都意味着启动一个进程。MySQL 服务器会把自己的进程ID写入到一
+
+个文件中。
+
+服务器日志文件。
+
+在服务器运行过程中，会产生各种各样的日志，比如常规的查询日志、错误日志、二进制日志、redo日志吧
+
+啦吧啦各种日志，这些日志各有各的用途，我们之后会重点唠叨各种日志的用途，现在先了解一下就可以
+
+了。
+
+默认/自动生成的SSL和RSA证书和密钥文件。
+
+主要是为了客户端和服务器安全通信而创建的一些文件， 大家看不懂可以忽略～"
+21,,,XDES 类型页面是干啥的？,XDES 类型页面全称是 extent descriptor，用来登记本组256个区的属性。,POOR_GRAMMAR,SHORT,chinese_tech_reader,"表空间中的页实在是太多了，为了更好的管理这些页面，设计InnoDB 的大叔们提出了区（英文名：extent ）
+
+的概念。对于16KB的页来说，连续的64个页就是一个区，也就是说一个区默认占用1MB空间大小。不论是系统
+
+表空间还是独立表空间，都可以看成是由若干个区组成的，每256个区被划分成一组。画个图表示就是这样：
+
+其中extent 0  ~ extent 255 这256个区算是第一个组，extent 256  ~ extent 511 这256个区算是第二个
+
+组，extent 512  ~ extent 767 这256个区算是第三个组（上图中并未画全第三个组全部的区，请自行脑补），
+
+依此类推可以划分更多的组。这些组的头几个页面的类型都是类似的，就像这样：
+
+从上图中我们能得到如下信息：
+
+第一个组最开始的3个页面的类型是固定的，也就是说extent 0 这个区最开始的3个页面的类型是固定的，
+
+分别是：
+
+FSP_HDR 类型：这个类型的页面是用来登记整个表空间的一些整体属性以及本组所有的区，也就是
+
+extent 0  ~ extent 255 这256个区的属性，稍后详细唠叨。需要注意的一点是，整个表空间只有一
+
+个FSP_HDR 类型的页面。
+
+IBUF_BITMAP 类型：这个类型的页面是存储本组所有的区的所有页面关于INSERT BUFFER 的信息。当
+
+然，你现在不用知道啥是个INSERT BUFFER ，后边会详细说到你吐。
+
+INODE 类型：这个类型的页面存储了许多称为INODE 的数据结构，还是那句话，现在你不需要知道啥是
+
+个INODE ，后边儿会说到你吐。
+
+其余各组最开始的2个页面的类型是固定的，也就是说extent 256 、extent 512 这些区最开始的2个页面
+
+的类型是固定的，分别是：
+
+XDES 类型：全称是extent descriptor ，用来登记本组256个区的属性，也就是说对于在extent 256
+
+区中的该类型页面存储的就是extent 256  ~ extent 511 这些区的属性，对于在extent 512 区中的该
+
+类型页面存储的就是extent 512  ~ extent 767 这些区的属性。上边介绍的FSP_HDR 类型的页面其实
+
+和XDES 类型的页面的作用类似，只不过FSP_HDR 类型的页面还会额外存储一些表空间的属性。"
+22,,,InnoDB在B+树索引中如何通过区分配来优化范围查询的性能？,InnoDB对B+树的叶子节点和非叶子节点区别对待，叶子节点有自己独立的区分配。当表中数据量大时，为索引分配空间不再按页为单位，而是按区为单位，甚至一次性分配多个连续的区。虽然可能造成空间浪费，但能消除很多随机I/O，从而优化范围查询的性能。,WEB_SEARCH_LIKE,LONG,chinese_tech_reader,"在表中数据量大
+
+的时候，为某个索引分配空间的时候就不再按照页为单位分配了，而是按照区为单位分配，甚至在表中的数据
+
+十分非常特别多的时候，可以一次性分配多个连续的区。虽然可能造成一点点空间的浪费（数据不足填充满整个
+
+区），但是从性能角度看，可以消除很多的随机I/O ，功大于过嘛！
+
+事情到这里就结束了么？太天真了，我们提到的范围查询，其实是对B+ 树叶子节点中的记录进行顺序扫描，而
+
+如果不区分叶子节点和非叶子节点，统统把节点代表的页面放到申请到的区中的话，进行范围扫描的效果就大打
+
+折扣了。所以设计InnoDB 的大叔们对B+ 树的叶子节点和非叶子节点进行了区别对待，也就是说叶子节点有自己"
+23,,,Space ID of the INODE Entry 是什么？,Space ID of the INODE Entry 是 INODE Entry 结构所在的表空间 ID，占用 4 字节。,MISSPELLED,SHORT,chinese_tech_reader,"我们知道一个索引会产生两个段，分别是叶子节点段和非叶子节点段，而每个段都会对应一个INODE Entry 结
+
+构，那我们怎么知道某个段对应哪个INODE Entry 结构呢？所以得找个地方记下来这个对应关系。希望你还记得
+
+我们在唠叨数据页，也就是INDEX 类型的页时有一个Page Header 部分，当然我不能指望你记住，所以把Page
+
+Header 部分再抄一遍给你看：
+
+Page Header部分（为突出重点，省略了好多属性）
+
+名称
+
+占用空间大小
+
+描述
+
+...
+
+...
+
+...
+
+PAGE_BTR_SEG_LEAF
+
+10 字节
+
+B+树叶子段的头部信息，仅在B+树的根页定义
+
+PAGE_BTR_SEG_TOP
+
+10 字节
+
+B+树非叶子段的头部信息，仅在B+树的根页定义
+
+其中的PAGE_BTR_SEG_LEAF 和PAGE_BTR_SEG_TOP 都占用10个字节，它们其实对应一个叫Segment Header 的结
+
+构，该结构图示如下：
+
+各个部分的具体释义如下：
+
+名称
+
+占用字节数
+
+描述
+
+Space ID of the INODE Entry
+
+4
+
+INODE Entry结构所在的表空间ID
+
+Page Number of the INODE Entry
+
+4
+
+INODE Entry结构所在的页面页号
+
+Byte Offset of the INODE Ent
+
+2
+
+INODE Entry结构在该页面中的偏移量
+
+这样子就很清晰了，PAGE_BTR_SEG_LEAF 记录着叶子节点段对应的INODE Entry 结构的地址是哪个表空间的哪个
+
+页面的哪个偏移量，PAGE_BTR_SEG_TOP 记录着非叶子节点段对应的INODE Entry 结构的地址是哪个表空间的哪
+
+个页面的哪个偏移量。这样子索引和其对应的段的关系就建立起来了。不过需要注意的一点是，因为一个索引只
+
+对应两个段，所以只需要在索引的根页面中记录这两个结构即可。"
+24,,,SYS_FIELDS 表是干嘛的？,SYS_FIELDS 表记录整个 InnoDB 存储引擎中所有的索引对应的列的信息。,POOR_GRAMMAR,SHORT,chinese_tech_reader,"balabala ... 还有好多，不一一列举了
+
+上述这些数据并不是我们使用INSERT 语句插入的用户数据，实际上是为了更好的管理我们这些用户数据而不得
+
+已引入的一些额外数据，这些数据也称为元数据。InnoDB存储引擎特意定义了一些列的内部系统表（internal
+
+system table）来记录这些这些元数据：
+
+表名
+
+描述
+
+SYS_TABLES
+
+整个InnoDB存储引擎中所有的表的信息
+
+SYS_COLUMNS
+
+整个InnoDB存储引擎中所有的列的信息
+
+SYS_INDEXES
+
+整个InnoDB存储引擎中所有的索引的信息
+
+SYS_FIELDS
+
+整个InnoDB存储引擎中所有的索引对应的列的信息
+
+SYS_FOREIGN
+
+整个InnoDB存储引擎中所有的外键的信息
+
+SYS_FOREIGN_COLS
+
+整个InnoDB存储引擎中所有的外键对应列的信息
+
+SYS_TABLESPACES
+
+整个InnoDB存储引擎中所有的表空间信息
+
+SYS_DATAFILES
+
+整个InnoDB存储引擎中所有的表空间对应文件系统的文件路径信息
+
+SYS_VIRTUAL
+
+整个InnoDB存储引擎中所有的虚拟生成列的信息
+
+这些系统表也被称为数据字典，它们都是以B+ 树的形式保存在系统表空间的某些页面中，其中
+
+SYS_TABLES 、SYS_COLUMNS 、SYS_INDEXES 、SYS_FIELDS 这四个表尤其重要，称之为基本系统表（basic
+
+system tables），我们先看看这4个表的结构：
+
+SYS_TABLES表
+
+SYS_TABLES表的列
+
+列名
+
+描述
+
+NAME
+
+表的名称
+
+ID
+
+InnoDB存储引擎中每个表都有一个唯一的ID
+
+N_COLS
+
+该表拥有列的个数
+
+TYPE
+
+表的类型，记录了一些文件格式、行格式、压缩等信息
+
+MIX_ID
+
+已过时，忽略
+
+MIX_LEN
+
+表的一些额外的属性
+
+CLUSTER_ID
+
+未使用，忽略
+
+SPACE
+
+该表所属表空间的ID
+
+这个SYS_TABLES 表有两个索引：
+
+以NAME 列为主键的聚簇索引
+
+以ID 列建立的二级索引
+
+SYS_COLUMNS表
+
+SYS_COLUMNS表的列
+
+列名
+
+描述
+
+TABLE_ID
+
+该列所属表对应的ID
+
+POS
+
+该列在表中是第几列
+
+NAME
+
+该列的名称
+
+MTYPE
+
+main data type，主数据类型，就是那堆INT、CHAR、VARCHAR、FLOAT、DOUBLE之类的东东
+
+PRTYPE"
+25,,,idx_key1和idx_key3如何通过联合索引替代Intersection索引合并？,"通过将idx_key1和idx_key3两个单独的B+树索引替换为一个联合索引idx_key1_key3(key1, key3)，可以直接使用该联合索引进行查询，无需读取多棵B+树和合并结果，从而替代Intersection索引合并。",WEB_SEARCH_LIKE,MEDIUM,chinese_tech_reader,"ion这个玩意儿。
+
+10.8.3.4  索引合并注意事项
+
+10.8.3.5  联合索引替代Intersection索引合并
+
+SELECT * FROM single_table WHERE key1 = 'a' AND key3 = 'b';
+
+这个查询之所以可能使用Intersection 索引合并的方式执行，还不是因为idx_key1 和idx_key3 是两个单独
+
+的B+ 树索引，你要是把这两个列搞一个联合索引，那直接使用这个联合索引就把事情搞定了，何必用啥索引合
+
+并呢，就像这样：
+
+ALTER TABLE single_table drop index idx_key1, idx_key3, add index idx_key1_key3(key1, key
+
+3);
+
+这样我们把没用的idx_key1 、idx_key3 都干掉，再添加一个联合索引idx_key1_key3 ，使用这个联合索引进
+
+行查询简直是又快又好，既不用多读一棵B+ 树，也不用合并结果，何乐而不为？
+
+小贴士：
+
+不过小心有单独对key3列进行查询的业务场景，这样子不得不再把key3列的单独索引给加上。"
+26,,,Data_length 在 InnoDB 存储引擎中代表什么？,Data_length 表示表占用的存储空间字节数，对于使用 InnoDB 存储引擎的表来说，该值相当于聚簇索引占用的存储空间大小，可以计算为聚簇索引的页面数量乘以每个页面的大小。,MISSPELLED,MEDIUM,chinese_tech_reader,"Rows
+
+本选项表示表中的记录条数。对于使用MyISAM 存储引擎的表来说，该值是准确的，对于使用InnoDB 存储引
+
+擎的表来说，该值是一个估计值。从查询结果我们也可以看出来，由于我们的single_table 表是使用
+
+InnoDB 存储引擎的，所以虽然实际上表中有10000条记录，但是SHOW TABLE STATUS 显示的Rows 值只有
+
+9693条记录。
+
+Data_length
+
+本选项表示表占用的存储空间字节数。使用MyISAM 存储引擎的表来说，该值就是数据文件的大小，对于使
+
+用InnoDB 存储引擎的表来说，该值就相当于聚簇索引占用的存储空间大小，也就是说可以这样计算该值的
+
+大小：
+
+Data_length = 聚簇索引的页面数量 x 每个页面的大小
+
+我们的single_table 使用默认16KB 的页面大小，而上边查询结果显示Data_length 的值是1589248 ，所
+
+以我们可以反向来推导出聚簇索引的页面数量：
+
+聚簇索引的页面数量 = 1589248 ÷ 16 ÷ 1024 = 97
+
+我们现在已经得到了聚簇索引占用的页面数量以及该表记录数的估计值，所以就可以计算全表扫描成本了，但是
+
+设计MySQL 的大叔在真实计算成本时会进行一些微调，这些微调的值是直接硬编码到代码里的，由于没有注
+
+释，我也不知道这些微调值是个啥子意思，但是由于这些微调的值十分的小，并不影响我们分析，所以我们也没
+
+有必要在这些微调值上纠结了。现在可以看一下全表扫描成本的计算过程：
+
+I/O 成本
+
+97 x 1.0 + 1.1 = 98.1
+
+97 指的是聚簇索引占用的页面数，1.0 指的是加载一个页面的成本常数，后边的1.1 是一个微调值，我们
+
+不用在意。
+
+CPU 成本：
+
+9693 x 0.2 + 1.0 = 1939.6
+
+9693 指的是统计数据中表的记录数，对于InnoDB 存储引擎来说是一个估计值，0.2 指的是访问一条记录
+
+所需的成本常数，后边的1.0 是一个微调值，我们不用在意。
+
+总成本：
+
+98.1 + 1939.6 = 2037.7
+
+综上所述，对于single_table 的全表扫描所需的总成本就是2037.7 。
+
+小贴士：
+
+我们前边说过表中的记录其实都存储在聚簇索引对应B+树的叶子节点中，所以只要我们通过根节点获得
+
+了最左边的叶子节点，就可以沿着叶子节点组成的双向链表把所有记录都查看一遍。也就是说全表扫描"
+27,,,idx_key2 这个索引在查询中怎么用？MySQL 优化器怎么算使用 idx_key2 的成本？,"使用 idx_key2 执行查询时，MySQL 优化器计算成本依赖两个数据：范围区间数量和需要回表的记录数。本例中 idx_key2 的范围区间只有一个 (10, 1000)，所以访问该范围区间的二级索引 I/O 成本为 1 x 1.0 = 1.0。需要回表的记录数通过先找到区间最左记录（满足 key2 > 10 的第一条记录）和区间最右记录（满足 key2 < 1000 的第一条记录）来计算，这两个过程的性能消耗可以忽略不计。",POOR_GRAMMAR,LONG,chinese_tech_reader,"计算使用不同索引执行查询的代价
+
+从第1步分析我们得到，上述查询可能使用到idx_key1 和idx_key2 这两个索引，我们需要分别分析单独使用这
+
+些索引执行查询的成本，最后还要分析是否可能使用到索引合并。这里需要提一点的是，MySQL 查询优化器先分
+
+析使用唯一二级索引的成本，再分析使用普通索引的成本，所以我们也先分析idx_key2 的成本，然后再看使用
+
+idx_key1 的成本。
+
+使用idx_key2执行查询的成本分析
+
+idx_key2 对应的搜索条件是：key2 > 10 AND key2 < 1000 ，也就是说对应的范围区间就是：(10, 1000) ，
+
+使用idx_key2 搜索的示意图就是这样子：
+
+对于使用二级索引 + 回表方式的查询，设计MySQL 的大叔计算这种查询的成本依赖两个方面的数据：
+
+范围区间数量
+
+不论某个范围区间的二级索引到底占用了多少页面，查询优化器粗暴的认为读取索引的一个范围区间的I/O
+
+成本和读取一个页面是相同的。本例中使用idx_key2 的范围区间只有一个：(10, 1000) ，所以相当于访问
+
+这个范围区间的二级索引付出的I/O 成本就是：
+
+1 x 1.0 = 1.0
+
+需要回表的记录数
+
+优化器需要计算二级索引的某个范围区间到底包含多少条记录，对于本例来说就是要计算idx_key2 在(10,
+
+1000) 这个范围区间中包含多少二级索引记录，计算过程是这样的：
+
+步骤1：先根据key2 > 10 这个条件访问一下idx_key2 对应的B+ 树索引，找到满足key2 > 10 这个条
+
+件的第一条记录，我们把这条记录称之为区间最左记录。我们前头说过在B+ 数树中定位一条记录的过
+
+程是贼快的，是常数级别的，所以这个过程的性能消耗是可以忽略不计的。
+
+步骤2：然后再根据key2 < 1000 这个条件继续从idx_key2 对应的B+ 树索引中找出第一条满足这
+
+个条件的记录，我们把这条记录称之为区间最右记录，这个过程的性能消耗也可以忽略不计的。"
+28,,,eq_range_index_dive_limit 参数对 IN 语句中 id 的查询有什么影响？,当 IN 语句中的参数个数小于 eq_range_index_dive_limit 的值（200）时，使用 index dive 方式计算各单点区间对应的记录条数；若大于或等于 200，则使用索引统计数据来估算。,MISSPELLED,SHORT,chinese_tech_reader,"+---------------------------+-------+
+
+| eq_range_index_dive_limit | 200   |
+
++---------------------------+-------+
+
+1 row in set (0.08 sec)
+
+也就是说如果我们的IN 语句中的参数个数小于200个的话，将使用index dive 的方式计算各个单点区间对应的
+
+记录条数，如果大于或等于200个的话，可就不能使用index dive 了，要使用所谓的索引统计数据来进行估算。
+
+怎么个估算法？继续往下看。
+
+像会为每个表维护一份统计数据一样，MySQL 也会为表中的每一个索引维护一份统计数据，查看某个表中索引的
+
+统计数据可以使用SHOW INDEX FROM 表名的语法，比如我们查看一下single_table 的各个索引的统计数据可以
+
+这么写：
+
+mysql> SHOW INDEX FROM single_table;
+
++--------------+------------+--------------+--------------+-------------+-----------+-----
+
+--------+----------+--------+------+------------+---------+---------------+
+
+| Table        | Non_unique | Key_name     | Seq_in_index | Column_name | Collation | Card
+
+inality | Sub_part | Packed | Null | Index_type | Comment | Index_comment |
+
++--------------+------------+--------------+--------------+-------------+-----------+-----
+
+--------+----------+--------+------+------------+---------+---------------+
+
+| single_table |          0 | PRIMARY      |            1 | id          | A         |"
+29,,,MyISAM 存储引擎的统计数据是如何收集和存储的？,书中未介绍 MyISAM 存储引擎统计数据的收集和存储方式，建议查阅相关文档。,WEB_SEARCH_LIKE,SHORT,chinese_tech_reader,"标签： MySQL 是怎样运行的
+
+我们前边唠叨查询成本的时候经常用到一些统计数据，比如通过SHOW TABLE STATUS 可以看到关于表的统计数
+
+据，通过SHOW INDEX 可以看到关于索引的统计数据，那么这些统计数据是怎么来的呢？它们是以什么方式收集
+
+的呢？本章将聚焦于InnoDB 存储引擎的统计数据收集策略，看完本章大家就会明白为啥前边老说InnoDB 的统计
+
+信息是不精确的估计值了（言下之意就是我们不打算介绍MyISAM 存储引擎统计数据的收集和存储方式，有想了
+
+解的同学自己个儿看看文档哈）。"
+30,,,在InnoDB中，如何通过STATS_SAMPLE_PAGES属性控制统计信息的采样页面数量，以及clustered_index_size和sum_of_other_index_sizes统计项是如何从索引的根页面和段结构收集的？,在InnoDB中，可以通过CREATE TABLE或ALTER TABLE语句指定STATS_SAMPLE_PAGES属性来设置采样页面数量，若未指定则默认使用系统变量innodb_stats_persistent_sample_pages的值。clustered_index_size和sum_of_other_index_sizes的收集过程包括：从数据字典（如SYS_INDEXES表）找到各索引的根页面位置；从根页面的Page Header中获取叶子节点段和非叶子节点段对应的Segment Header（PAGE_BTR_SEG_LEAF和PAGE_BTR_SEG_TOP）；从Segment Header中找到对应的INODE Entry结构；从INODE Entry中获取零散页面地址以及FREE、NOT_FULL、FULL链表的基节点；统计零散页面数量，并从链表基节点的List Length字段读出段占用的区大小（每区64页），从而计算出段占用的总页面数。聚簇索引的叶子节点段和非叶子节点段页面数之和即为clustered_index_size。,WEB_SEARCH_LIKE,LONG,chinese_tech_reader,"数据存储方式：
+
+CREATE TABLE 表名 (...) Engine=InnoDB, STATS_SAMPLE_PAGES = 具体的采样页面数量;
+
+ALTER TABLE 表名 Engine=InnoDB, STATS_SAMPLE_PAGES = 具体的采样页面数量;
+
+如果我们在创建表的语句中并没有指定STATS_SAMPLE_PAGES 属性的话，将默认使用系统变量
+
+innodb_stats_persistent_sample_pages 的值作为该属性的值。
+
+13.2.1.2  clustered_index_size和sum_of_other_index_sizes统计项的收集
+
+统计这两个数据需要大量用到我们之前唠叨的InnoDB 表空间的知识，如果大家压根儿没有看那一章，那下边的
+
+计算过程大家还是不要看了（看也看不懂）；如果看过了，那大家就会发现InnoDB 表空间的知识真是有用啊啊
+
+啊！！！
+
+这两个统计项的收集过程如下：
+
+从数据字典里找到表的各个索引对应的根页面位置。
+
+系统表SYS_INDEXES 里存储了各个索引对应的根页面信息。
+
+从根页面的Page Header 里找到叶子节点段和非叶子节点段对应的Segment Header 。
+
+在每个索引的根页面的Page Header 部分都有两个字段：
+
+PAGE_BTR_SEG_LEAF ：表示B+树叶子段的Segment Header 信息。
+
+PAGE_BTR_SEG_TOP ：表示B+树非叶子段的Segment Header 信息。
+
+从叶子节点段和非叶子节点段的Segment Header 中找到这两个段对应的INODE Entry 结构。
+
+这个是Segment Header 结构：
+
+从对应的INODE Entry 结构中可以找到该段对应所有零散的页面地址以及FREE 、NOT_FULL 、FULL 链表的
+
+基节点。
+
+这个是INODE Entry 结构：
+
+直接统计零散的页面有多少个，然后从那三个链表的List Length 字段中读出该段占用的区的大小，每个区
+
+占用64 个页，所以就可以统计出整个段占用的页面。
+
+这个是链表基节点的示意图：
+
+分别计算聚簇索引的叶子结点段和非叶子节点段占用的页面数，它们的和就是clustered_index_size 的"
+31,,,OpenClaw 如何与 OpenAI 集成，并在成本优化中如何利用 OpenAI 的模型分层策略？,OpenClaw 与 OpenAI 的集成属于其与主流 AI 模型生态的实践之一，涵盖 OpenAI 的接入要点和统一管理。在成本优化中，OpenClaw 建议按问题复杂度分层使用 OpenAI 模型：简单问题（80%）用 Haiku，中等（15%）用 Sonnet，复杂（5%）用 Opus，可降低平均成本 50-70%。同时需按 OpenAI 当前 Models 与 Pricing 页重新核对价格，并考虑 Batch API、缓存输入、长上下文价格层和区域差异。,,,,"<1-hop>
+
+本章介绍 OpenClaw 与主流 AI 模型生态的集成实践，涵盖 Anthropic Claude、OpenAI、以及以 Ollama
+
+为代表的本地模型。第四章已讲清模型供应商接入和 Fallback 配置的基础用法，本章在此基础上聚焦各生态的特
+
+有能力、接入要点，以及在 OpenClaw 中统一管理多生态模型的实践模式。
+---
+<2-hop>
+
+前可用模型清单或报价。生产估算时必须按 OpenAI 当前 Models 与 Pricing 页重新核对，并把 Batch
+
+API、缓存输入、长上下文价格层和区域差异单独计入。
+
+典型分层：简单问题（80%）→ Haiku，中等（15%）→ Sonnet，复杂（5%）→ Opus，可降低平均成本 50-70%。
+
+该比例是经验示例，不是基准结论；上线前应按真实流量和当前价格复算。
+
+14.1.6 Token 成本与配额观测
+
+使用 OpenClaw 内置命令观测 Token 消耗、会话成本和 provider 配额窗口：
+
+注意：Claude Opus 4.7 的 Tokenizer 变化与思考模式：Opus 4.7 采用了新的 tokenizer，token 膨
+
+胀率因内容类型而异：英文纯文本接近 1.0x，代码和结构化数据可达 1.35x。虽然 per-token 定价保持不变
+
+（
+
+25），但复杂技术内容的实际有效成本可能显著上升。此外，Opus 4.7 不支持 Extended Thinking，仅
+
+支持 Adaptive Thinking（自动调整思考深度）。可通过启用 Prompt Caching（节省高达 90%）或 Batch
+
+Processing（节省 50%）来部分抵消成本增加。
+
+5/
+
+Built with mdPress
+
+# 查看当前会话的 Token / 缓存 / 最近一次回复成本摘要
+
+/status
+
+# 查看会话成本摘要
+
+/usage cost
+
+# 查看 transcript-backed CLI 成本摘要
+
+openclaw gateway usage-cost
+
+# 查看 provider 侧配额/窗口快照，不等同于成本趋势报表
+
+openclaw status --usage
+
+14.1.7 成本优化检查清单
+
+在优化 Token 成本时，按以下顺序检查：
+
+1. 系统提示长度 < 100 字？ □
+
+若否：精简到 50 字以内
+
+2. 工具列表 < 5 个工具/Agent？ □
+
+若否：为不同 Agent 分配差异化工具
+
+3. 上下文预算 < 10K Token？ □
+
+若否：启用 contextPruning，降到 8K
+
+4. 消息历史 < 20 条？ □
+
+若否：启用 compaction，压缩到 10 条 + 摘要
+
+5. 输出限制 已配置？ □
+
+若否：为各 Agent 设置 maxTokens
+
+6. 模型选择 有分层吗？ □"
+32,,,在InnoDB的Undo页面链表中，first undo page的作用是什么？它如何被分配，并且其中包含哪些关键属性？,first undo page是Undo页面链表的第一个页面，它包含Undo Log Segment Header部分，其中TRX_UNDO_STATE属性用于标记该Undo页面链表是否处于被缓存状态（如TRX_UNDO_CACHED）。分配时，系统从回滚段的第一个undo slot开始，若该slot值为FIL_NULL，则在表空间中创建一个新的段（Undo Log Segment），从段中申请一个页面作为first undo page，并将该undo slot的值设置为该页面的地址。此外，first undo page中还包含TRX_UNDO_PAGE_LIST属性，它是Undo页面链表的基节点，用于将各个Undo页面连接成链表。,,,,"<1-hop>
+
+初始情况下，由于未向任何事务分配任何Undo页面链表，所以对于一个Rollback Segment Header 页面来说，
+
+它的各个undo slot 都被设置成了一个特殊的值：FIL_NULL （对应的十六进制就是0xFFFFFFFF ），表示该
+
+undo slot 不指向任何页面。
+
+随着时间的流逝，开始有事务需要分配Undo页面链表了，就从回滚段的第一个undo slot 开始，看看该undo
+
+slot 的值是不是FIL_NULL ：
+
+如果是FIL_NULL ，那么在表空间中新创建一个段（也就是Undo Log Segment ），然后从段里申请一个页面
+
+作为Undo页面链表的first undo page ，然后把该undo slot 的值设置为刚刚申请的这个页面的地址，这
+
+样也就意味着这个undo slot 被分配给了这个事务。
+
+如果不是FIL_NULL ，说明该undo slot 已经指向了一个undo链表，也就是说这个undo slot 已经被别的
+
+事务占用了，那就跳到下一个undo slot ，判断该undo slot 的值是不是FIL_NULL ，重复上边的步骤。
+
+一个Rollback Segment Header 页面中包含1024 个undo slot ，如果这1024 个undo slot 的值都不为
+
+FIL_NULL ，这就意味着这1024 个undo slot 都已经名花有主（被分配给了某个事务），此时由于新事务无法
+
+再获得新的Undo页面链表，就会回滚这个事务并且给用户报错：
+
+Too many active concurrent transactions
+
+用户看到这个错误，可以选择重新执行这个事务（可能重新执行时有别的事务提交了，该事务就可以被分配Undo
+
+页面链表了）。
+
+当一个事务提交时，它所占用的undo slot 有两种命运：
+
+如果该undo slot 指向的Undo页面链表符合被重用的条件（就是我们上边说的Undo页面链表只占用一个
+
+页面并且已使用空间小于整个页面的3/4）。
+
+该undo slot 就处于被缓存的状态，设计InnoDB 的大叔规定这时该Undo页面链表的TRX_UNDO_STATE 属性
+
+（该属性在first undo page 的Undo Log Segment Header 部分）会被设置为TRX_UNDO_CACHED 。
+---
+<2-hop>
+
+TRX_UNDO_PAGE_LIST ：Undo页面链表的基节点。
+
+我们上边说Undo页面的Undo Page Header 部分有一个12字节大小的TRX_UNDO_PAGE_NODE 属性，这个属性
+
+代表一个List Node 结构。每一个Undo页面都包含Undo Page Header 结构，这些页面就可以通过这个属
+
+性连成一个链表。这个TRX_UNDO_PAGE_LIST 属性代表着这个链表的基节点，当然这个基节点只存在于Undo
+
+页面链表的第一个页面，也就是first undo page 中。"
+33,,,在MySQL中，状态变量的SESSION作用范围是什么意思？如何查看当前会话的SESSION级别状态变量？,状态变量的SESSION作用范围表示该变量只反映当前会话（即当前客户端连接）的运行状况。要查看当前会话的SESSION级别状态变量，可以使用语句：SHOW SESSION STATUS LIKE '匹配的模式'；或者省略SESSION关键字，因为默认作用范围就是SESSION。例如，执行SHOW STATUS LIKE 'thread%';会显示当前会话中所有以Thread开头的状态变量。,,,,"<1-hop>
+
+为了让我们更好的了解服务器程序的运行情况，MySQL 服务器程序中维护了好多关于程序运行状态的变量，它们
+
+被称为状态变量。比方说Threads_connected 表示当前有多少客户端与服务器建立了连接，Handler_update
+
+表示已经更新了多少行记录吧啦吧啦，像这样显示服务器程序状态信息的状态变量还有好几百个，我们就不一
+
+一唠叨了，等遇到了会详细说它们的作用的。
+
+由于状态变量是用来显示服务器程序运行状况的，所以它们的值只能由服务器程序自己来设置，我们程序员是
+
+不能设置的。与系统变量类似，状态变量也有GLOBAL 和SESSION 两个作用范围的，所以查看状态变量的语
+
+句可以这么写：
+
+SHOW [GLOBAL|SESSION] STATUS [LIKE 匹配的模式];
+
+类似的，如果我们不写明作用范围，默认的作用范围是SESSION ，比方说这样：
+
+mysql> SHOW STATUS LIKE 'thread%';
+
++-------------------+-------+
+
+| Variable_name     | Value |
+
++-------------------+-------+
+
+| Threads_cached    | 0     |
+
+| Threads_connected | 1     |
+
+| Threads_created   | 1     |
+
+| Threads_running   | 1     |
+
++-------------------+-------+
+
+4 rows in set (0.00 sec)
+
+mysql>
+
+所有以Thread 开头的SESSION 作用范围的状态变量就都被展示出来了。"
+34,,,SOUL.md 在多智能体配置中如何用于区分不同 Agent 的个性？,SOUL.md 是定义智能体个性、角色与行为约束的配置文件，用于独立控制单一智能体的价值观与决策偏向。在多智能体配置中，像客服语气、运维边界、分析报告模板这类差异，推荐分别写进各自工作区的 SOUL.md 中，而不是把所有人格差异都塞进同一段内联提示词。,,,,"<1-hop>
+
+个完整的模型输入提示的过程。
+
+Pruning（上下文裁剪）：按优先级算法（如基于时间衰减或重要度评分），强制丢弃低价值的中间执行回执。
+
+Session（会话/记忆容器）：承载多轮任务连续性的抽象，内部维护了状态与短/长记忆快照。
+
+Skill（技能）：文本化的方法固化机制，用于把高频任务的步骤、约束与验收标准沉淀为可复用流程；与插件
+
+并行使用，插件扩展能力，技能固化方法。
+
+SOUL.md（智能体身份配置）：定义智能体个性、角色与行为约束的配置文件，用于独立控制单一智能体的价值
+
+观与决策偏向。
+
+Tool（工具）：大模型与外部系统交互的原子执行单元，通常被严格划分为“读工具”（安全）与“写工具”（需要
+
+幂等与审计）。
+
+Token Budget（token 预算）：为了避免超出模型的 Context Window，系统对输入的各个部分（历史、
+
+检索结果、指令等）分配的 token 额度。
+
+Built with mdPress
+
+A.2 渠道与运维术语
+
+Webhook：外部系统通过 HTTP 回调主动触发 OpenClaw 任务的机制，用于异步事件驱动工作流。
+
+Pairing（设备配对）：通过设备身份、challenge-response、人工批准与令牌签发让新设备或 DM 发送者
+
+进入受信任集合；二维码或配对码只是常见引导方式之一。
+
+Hook（生命周期切面）：允许开发者在 Agent 调用的各个阶段（如提示词构建前、工具执行后）注入自定义
+
+逻辑的扩展点。
+
+Cron（定时作业）：OpenClaw Gateway 管理的定时任务系统，用于唤醒智能体执行自检、巡检、总结或清
+
+理任务，并在 ~/.openclaw/cron/ 下持久化任务状态。
+
+Rate Limit（限流）：对外部 API、模型调用或资源访问施加的流量上限，防止过载与配额超支。
+
+Cooldown（冷却期）：在重试或重新触发某个操作前，系统强制等待的最小时间间隔。
+
+Circuit Breaker（熔断器）：当某个依赖服务连续失败次数或错误率超过阈值时，系统主动断开连接、快速
+
+失败的保护机制。
+
+Runbook（运维手册）：记录处理系统故障、紧急回滚与例行排障步骤的标准文档。
+
+Guardrail（安全护栏）：由权限边界、沙箱隔离约束、内容风控引擎与审计系统等组合而成的防御矩阵集合。
+
+A.3 扩展与集成术语
+---
+<2-hop>
+
+注意：当前多智能体配置强调“每个 Agent 一套工作区文件和状态目录”。像客服语气、运维边界、分析报告模
+
+板这类差异，推荐分别写进各自工作区的 AGENTS.md、SOUL.md、USER.md，而不是把所有人格差异都塞进同一段
+
+内联提示词。
+
+Built with mdPress
+
+16.2.3 三种协作编排模式
+
+当任务复杂到单个 Agent 无法独立完成时，需要多 Agent 协作。以下三种模式覆盖了大多数生产场景：
+
+模式一：串联（顺序委托）
+
+前一个 Agent 的输出作为后一个 Agent 的输入，适用于有明确前后依赖的流水线。
+
+用户请求
+
+协调 Agent
+
+任务分解
+
+分析 Agent
+
+数据处理
+
+校验 Agent
+
+质量检查
+
+最终结果
+
+图 16-1：串联协作模式
+
+典型场景：用户提交研究请求 → 协调 Agent 分解为子任务 → 分析 Agent 执行数据分析 → 校验 Agent 检查
+
+结果质量 → 返回最终报告。
+
+实现方式：协调 Agent 通过 sessions_spawn 或 /subagents spawn 发起后台子任务；/subagents spawn 立即
+
+返回 run id，sessions_spawn 返回 runId / childSessionKey，完成后由 OpenClaw push / announce 结
+
+果。只有在 ACP/acpx backend 已安装、启用并可用时，才应使用 sessions_spawn({ runtime: ""acp"" })；默
+
+认 Codex 路径应走原生 Codex app-server /codex 与 openai/* runtime。
+
+模式二：并联（同步扇出）
+
+多个 Agent 同时处理独立的子任务，最后汇聚结果。适用于子任务之间没有依赖的场景。
+
+Built with mdPress"
+35,,,innodb_log_buffer_size 怎么影响 redo 日志刷新？,innodb_log_buffer_size 指定 log buffer 的大小。当写入 log buffer 的 redo 日志量占满总容量大约一半时，就需要刷新到磁盘。,,,,"<1-hop>
+
+我们前边说mtr 运行过程中产生的一组redo 日志在mtr 结束时会被复制到log buffer 中，可是这些日志总在
+
+内存里呆着也不是个办法，在一些情况下它们会被刷新到磁盘里，比如：
+
+log buffer 空间不足时
+
+log buffer 的大小是有限的（通过系统变量innodb_log_buffer_size 指定），如果不停的往这个有限大小
+
+的log buffer 里塞入日志，很快它就会被填满。设计InnoDB 的大叔认为如果当前写入log buffer 的
+
+redo 日志量已经占满了log buffer 总容量的大约一半左右，就需要把这些日志刷新到磁盘上。
+
+事务提交时
+
+我们前边说过之所以使用redo 日志主要是因为它占用的空间少，还是顺序写，在事务提交时可以不把修改
+
+过的Buffer Pool 页面刷新到磁盘，但是为了保证持久性，必须要把修改这些页面对应的redo 日志刷新到
+
+磁盘。
+
+后台线程不停的刷刷刷
+
+后台有一个线程，大约每秒都会刷新一次log buffer 中的redo 日志到磁盘。
+
+正常关闭服务器时
+
+做所谓的checkpoint 时（我们现在没介绍过checkpoint 的概念，稍后会仔细唠叨，稍安勿躁）
+
+其他的一些情况...
+---
+<2-hop>
+
+我们前边说过，设计InnoDB 的大叔为了解决磁盘速度过慢的问题而引入了Buffer Pool 。同理，写入redo 日
+
+志时也不能直接直接写到磁盘上，实际上在服务器启动时就向操作系统申请了一大片称之为redo log buffer 的
+
+连续内存空间，翻译成中文就是redo日志缓冲区，我们也可以简称为log buffer 。这片内存空间被划分成若干
+
+个连续的redo log block ，就像这样：
+
+我们可以通过启动参数innodb_log_buffer_size 来指定log buffer 的大小，在MySQL 5.7.21 这个版本中，该
+
+启动参数的默认值为16MB 。"
+36,,,在OpenClaw中，内建Cron和外部Crontab集成分别如何实现防重入？,"内建Cron在Gateway层面内置了部分防重入保护，同一jobId不会并发执行。外部Crontab则需要自行实现，常用方案是带TTL的分布式锁，例如使用redis-cli SET oc_job_lock:daily_report ""<instance_id>"" NX EX 600，释放锁时要校验锁持有者，避免误删其他实例锁。",,,,"<1-hop>
+
+agent 也可能在作业内部主动使用 message 工具发送消息。
+
+当前/固定会话模式（--session current / --session session:<id>）：创建时绑定当前活跃会话，或固定到
+
+显式持久 session key，适合需要持续累积同一任务上下文的作业。
+
+隔离作业还会走 watchdog 与浏览器清理路径，避免一个长任务长期占用会话、浏览器或执行资源。手动 cron
+
+run 返回只表示作业已入队；是否真的运行、失败或被跳过，应继续用 openclaw cron runs --id <jobId> 对账。
+
+8.2.2 外部 Crontab 集成
+
+当需要与已有运维流水线（Ansible、Terraform、CI/CD）对接，或者作业逻辑涉及宿主机层面操作（文件清理、
+
+日志轮转、备份）时，可以使用宿主机的 crontab 或 systemd timer 来编排，通过 CLI 调用 OpenClaw。
+
+# crontab 条目
+
+0 9 * * 1-5 /opt/openclaw/jobs/daily_standup.sh >> /var/log/oc_jobs/standup.log 2>&1
+
+外部调度时，幂等与防重入需要由调用方自行保证（见 8.2.3、8.2.4）。
+
+8.2.3 四个工程约束：幂等、防重入、可观测、可恢复
+
+无论使用内建 Cron 还是外部 Crontab，生产环境中的定时任务至少要满足：
+
+幂等：重复执行不产生重复副作用。
+
+防重入：上一次未完成时不能并发冲突。
+
+可观测：每次执行有状态、耗时和错误分类。
+
+可恢复：失败后有明确重试与人工接管路径。
+
+内建 Cron 在 Gateway 层面已经内置了部分防重入保护（同一 jobId 不会并发执行）。外部 Crontab 则需要
+
+自行实现，常用方案是带 TTL 的分布式锁：
+
+# 获取锁成功才执行任务
+
+redis-cli SET oc_job_lock:daily_report ""<instance_id>"" NX EX 600
+
+释放锁时要校验锁持有者，避免误删其他实例锁。
+
+8.2.4 幂等键与失败分流
+
+幂等键：推荐以“作业名 + 窗口开始时间”作为键，保证同一调度窗口内重试不产生重复副作用。
+
+idempotency_key = ""daily_report:v2:"" + window_start_ts
+---
+<2-hop>
+
+带时区的 --at 时间按 UTC 解释；若要按本地墙上时间理解，应显式传入 --tz <IANA 时区>。
+
+管理与巡检：
+
+openclaw cron list              # 查看所有已注册作业及下次触发时间
+
+openclaw cron status            # 查看 cron 调度器健康度
+
+openclaw cron show <jobId>      # 查看单个作业详情
+
+openclaw cron run <jobId>       # 默认强制排队执行并立即返回；加 --due 才保持“到期才执行”
+
+openclaw cron enable <jobId>    # 启用指定作业
+
+openclaw cron disable <jobId>   # 禁用指定作业
+
+openclaw cron edit <jobId> --no-deliver
+
+openclaw cron runs --id <jobId> # 查看指定作业的执行历史
+
+openclaw cron remove <jobId>    # 移除指定作业（rm/remove/delete 等别名按当前 CLI 为准）
+
+openclaw status --deep          # 通用 Gateway 状态补充
+
+内建 Cron 作业支持 main、isolated、current、session:<id> 等会话目标（详见 8.3.8 选型决策树）：
+
+Built with mdPress
+
+主会话模式（--system-event / --session main）：作业通过系统事件注入主会话，由心跳链路执行，共享完
+
+整上下文，默认属于“静默任务”而不是主动通知。
+
+隔离会话模式（--message / --session isolated）：作业在独立的 cron:<jobId> 会话和 fresh
+
+transcript 中执行，不继承 ambient conversation routing/context；安全偏好、显式模型或认证
+
+覆盖仍可能按配置带入。runner 是否回退投递结果，要看 announce / webhook / none 配置，同时
+
+agent 也可能在作业内部主动使用 message 工具发送消息。"
+37,,,在InnoDB中，LSN值如何用于判断redo日志是否可以覆盖？,在InnoDB中，通过全局变量checkpoint_lsn来代表当前系统中可以被覆盖的redo日志总量。当脏页被刷新到磁盘后，计算当前系统中被最早修改的脏页对应的oldest_modification值，将小于该值的redo日志视为可覆盖，并更新checkpoint_lsn。此外，数据页的File Trailer部分也存储了页面最后修改时对应的LSN值，用于校验页的完整性。,,,,"<1-hop>
+
+有一个很不幸的事实就是我们的redo 日志文件组容量是有限的，我们不得不选择循环使用redo 日志文件组中的
+
+文件，但是这会造成最后写的redo 日志与最开始写的redo 日志追尾，这时应该想到：redo日志只是为了系统
+
+奔溃后恢复脏页用的，如果对应的脏页已经刷新到了磁盘，也就是说即使现在系统奔溃，那么在重启后也用不着
+
+使用redo日志恢复该页面了，所以该redo日志也就没有存在的必要了，那么它占用的磁盘空间就可以被后续的
+
+redo日志所重用。也就是说：判断某些redo日志占用的磁盘空间是否可以覆盖的依据就是它对应的脏页是否已经
+
+刷新到磁盘里。我们看一下前边一直唠叨的那个例子：
+
+如图，虽然mtr_1 和mtr_2 生成的redo 日志都已经被写到了磁盘上，但是它们修改的脏页仍然留在Buffer
+
+Pool 中，所以它们生成的redo 日志在磁盘上的空间是不可以被覆盖的。之后随着系统的运行，如果页a 被刷新
+
+到了磁盘，那么它对应的控制块就会从flush链表中移除，就像这样子：
+
+这样mtr_1 生成的redo 日志就没有用了，它们占用的磁盘空间就可以被覆盖掉了。设计InnoDB 的大叔提出了
+
+一个全局变量checkpoint_lsn 来代表当前系统中可以被覆盖的redo 日志总量是多少，这个变量初始值也是
+
+8704 。
+
+比方说现在页a 被刷新到了磁盘，mtr_1 生成的redo 日志就可以被覆盖了，所以我们可以进行一个增加
+
+checkpoint_lsn 的操作，我们把这个过程称之为做一次checkpoint 。做一次checkpoint 其实可以分为两个步
+
+骤：
+
+步骤一：计算一下当前系统中可以被覆盖的redo 日志对应的lsn 值最大是多少。
+
+redo 日志可以被覆盖，意味着它对应的脏页被刷到了磁盘，只要我们计算出当前系统中被最早修改的脏页
+
+对应的oldest_modification 值，那凡是在系统lsn值小于该节点的oldest_modification值时产生的redo日志
+
+都是可以被覆盖掉的，我们就把该脏页的oldest_modification 赋值给checkpoint_lsn 。
+
+比方说当前系统中页a 已经被刷新到磁盘，那么flush链表的尾节点就是页c ，该节点就是当前系统中最
+---
+<2-hop>
+
+1. InnoDB为了不同的目的而设计了不同类型的页，我们把用于存放记录的页叫做数据页。
+
+2. 一个数据页可以被大致划分为7个部分，分别是
+
+File Header ，表示页的一些通用信息，占固定的38字节。
+
+Page Header ，表示数据页专有的一些信息，占固定的56个字节。
+
+Infimum + Supremum ，两个虚拟的伪记录，分别表示页中的最小和最大记录，占固定的26 个字节。
+
+User Records ：真实存储我们插入的记录的部分，大小不固定。
+
+Free Space ：页中尚未使用的部分，大小不确定。
+
+Page Directory ：页中的某些记录相对位置，也就是各个槽在页面中的地址偏移量，大小不固定，插
+
+入的记录越多，这个部分占用的空间越多。
+
+File Trailer ：用于检验页是否完整的部分，占用固定的8个字节。
+
+3. 每个记录的头信息中都有一个next_record 属性，从而使页中的所有记录串联成一个单链表。
+
+4. InnoDB 会为把页中的记录划分为若干个组，每个组的最后一个记录的地址偏移量作为一个槽，存放在
+
+Page Directory 中，所以在一个页中根据主键查找记录是非常快的，分为两步：
+
+通过二分法确定该记录所在的槽。
+
+通过记录的next_record属性遍历该槽所在的组中的各个记录。
+
+5. 每个数据页的File Header 部分都有上一个和下一个页的编号，所以所有的数据页会组成一个双链表。
+
+6. 为保证从内存中同步到磁盘的页的完整性，在页的首部和尾部都会存储页中数据的校验和和页面最后修改时
+
+对应的LSN 值，如果首部和尾部的校验和和LSN 值校验不成功的话，就说明同步过程出现了问题。"
+38,,,SHOW TABLE STATUS 命令显示的 Rows 值对于 InnoDB 存储引擎是准确值还是估计值？该值如何影响全表扫描成本的计算？,SHOW TABLE STATUS 显示的 Rows 值对于 InnoDB 存储引擎是一个估计值。在计算全表扫描成本时，CPU 成本使用该估计值（例如 9693）乘以 0.2 再加上微调值 1.0，得到 1939.6。,,,,"<1-hop>
+
+标签： MySQL 是怎样运行的
+
+我们前边唠叨查询成本的时候经常用到一些统计数据，比如通过SHOW TABLE STATUS 可以看到关于表的统计数
+
+据，通过SHOW INDEX 可以看到关于索引的统计数据，那么这些统计数据是怎么来的呢？它们是以什么方式收集
+
+的呢？本章将聚焦于InnoDB 存储引擎的统计数据收集策略，看完本章大家就会明白为啥前边老说InnoDB 的统计
+
+信息是不精确的估计值了（言下之意就是我们不打算介绍MyISAM 存储引擎统计数据的收集和存储方式，有想了
+
+解的同学自己个儿看看文档哈）。
+---
+<2-hop>
+
+Rows
+
+本选项表示表中的记录条数。对于使用MyISAM 存储引擎的表来说，该值是准确的，对于使用InnoDB 存储引
+
+擎的表来说，该值是一个估计值。从查询结果我们也可以看出来，由于我们的single_table 表是使用
+
+InnoDB 存储引擎的，所以虽然实际上表中有10000条记录，但是SHOW TABLE STATUS 显示的Rows 值只有
+
+9693条记录。
+
+Data_length
+
+本选项表示表占用的存储空间字节数。使用MyISAM 存储引擎的表来说，该值就是数据文件的大小，对于使
+
+用InnoDB 存储引擎的表来说，该值就相当于聚簇索引占用的存储空间大小，也就是说可以这样计算该值的
+
+大小：
+
+Data_length = 聚簇索引的页面数量 x 每个页面的大小
+
+我们的single_table 使用默认16KB 的页面大小，而上边查询结果显示Data_length 的值是1589248 ，所
+
+以我们可以反向来推导出聚簇索引的页面数量：
+
+聚簇索引的页面数量 = 1589248 ÷ 16 ÷ 1024 = 97
+
+我们现在已经得到了聚簇索引占用的页面数量以及该表记录数的估计值，所以就可以计算全表扫描成本了，但是
+
+设计MySQL 的大叔在真实计算成本时会进行一些微调，这些微调的值是直接硬编码到代码里的，由于没有注
+
+释，我也不知道这些微调值是个啥子意思，但是由于这些微调的值十分的小，并不影响我们分析，所以我们也没
+
+有必要在这些微调值上纠结了。现在可以看一下全表扫描成本的计算过程：
+
+I/O 成本
+
+97 x 1.0 + 1.1 = 98.1
+
+97 指的是聚簇索引占用的页面数，1.0 指的是加载一个页面的成本常数，后边的1.1 是一个微调值，我们
+
+不用在意。
+
+CPU 成本：
+
+9693 x 0.2 + 1.0 = 1939.6
+
+9693 指的是统计数据中表的记录数，对于InnoDB 存储引擎来说是一个估计值，0.2 指的是访问一条记录
+
+所需的成本常数，后边的1.0 是一个微调值，我们不用在意。
+
+总成本：
+
+98.1 + 1939.6 = 2037.7
+
+综上所述，对于single_table 的全表扫描所需的总成本就是2037.7 。
+
+小贴士：
+
+我们前边说过表中的记录其实都存储在聚簇索引对应B+树的叶子节点中，所以只要我们通过根节点获得
+
+了最左边的叶子节点，就可以沿着叶子节点组成的双向链表把所有记录都查看一遍。也就是说全表扫描"
+39,,,mtr生成的redo日志如何被刷新到磁盘？,mtr生成的redo日志在mtr结束时被复制到log buffer中，然后在以下情况下刷新到磁盘：log buffer空间不足时（写入量占满约一半）、事务提交时、后台线程每秒刷新、正常关闭服务器时以及做checkpoint时。,,,,"<1-hop>
+
+buffer ，我们不得不额外多分配两个block，所以lsn 的值需要在8916 的基础上增加1000 + 12×2 + 4
+
+× 2 = 1032 。
+
+小贴士：
+
+为什么初始的lsn值为8704呢？我也不太清楚，人家就这么规定的。其实你也可以规定你一生下来算1
+
+岁，只要保证随着时间的流逝，你的年龄不断增长就好了。
+
+从上边的描述中可以看出来，每一组由mtr生成的redo日志都有一个唯一的LSN值与其对应，LSN值越小，说明
+
+redo日志产生的越早。
+---
+<2-hop>
+
+我们前边说mtr 运行过程中产生的一组redo 日志在mtr 结束时会被复制到log buffer 中，可是这些日志总在
+
+内存里呆着也不是个办法，在一些情况下它们会被刷新到磁盘里，比如：
+
+log buffer 空间不足时
+
+log buffer 的大小是有限的（通过系统变量innodb_log_buffer_size 指定），如果不停的往这个有限大小
+
+的log buffer 里塞入日志，很快它就会被填满。设计InnoDB 的大叔认为如果当前写入log buffer 的
+
+redo 日志量已经占满了log buffer 总容量的大约一半左右，就需要把这些日志刷新到磁盘上。
+
+事务提交时
+
+我们前边说过之所以使用redo 日志主要是因为它占用的空间少，还是顺序写，在事务提交时可以不把修改
+
+过的Buffer Pool 页面刷新到磁盘，但是为了保证持久性，必须要把修改这些页面对应的redo 日志刷新到
+
+磁盘。
+
+后台线程不停的刷刷刷
+
+后台有一个线程，大约每秒都会刷新一次log buffer 中的redo 日志到磁盘。
+
+正常关闭服务器时
+
+做所谓的checkpoint 时（我们现在没介绍过checkpoint 的概念，稍后会仔细唠叨，稍安勿躁）
+
+其他的一些情况..."
+40,,,OpenClaw 与 ChatGPT 在应用场景上有何区别？,根据上下文，OpenClaw 适合解决特定问题，而 ChatGPT 适用于其他场景，具体区别需根据实际需求判断。,,,,"<1-hop>
+
+完成本章的阅读后，你将能够：
+
+1. 说清楚 OpenClaw 是什么：能向别人解释它解决了什么问题，适合什么场景。
+
+2. 做出选型判断：知道在什么情况下该用 OpenClaw，什么时候用 ChatGPT 或 Zapier 更合适。
+
+3. 认识五个核心概念：理解 Gateway、Node、Agent、Tool、Session 的含义，为后续章节扫清
+
+沟通障碍。
+
+准备好的话，让我们正式 开始！
+
+Built with mdPress"
+41,,,OpenClaw 的 Cron 定时作业如何管理？,OpenClaw Gateway 管理的定时任务系统，用于唤醒智能体执行自检、巡检、总结或清理任务，并在 ~/.openclaw/cron/ 下持久化任务状态。管理命令包括：openclaw cron list 查看所有已注册作业及下次触发时间；openclaw cron status 查看 cron 调度器健康度；openclaw cron show <jobId> 查看单个作业详情；openclaw cron run <jobId> 强制排队执行并立即返回；openclaw cron enable <jobId> 启用指定作业；openclaw cron disable <jobId> 禁用指定作业；openclaw cron edit <jobId> --no-deliver 编辑作业；openclaw cron runs --id <jobId> 查看指定作业的执行历史；openclaw cron remove <jobId> 移除指定作业。,,,,"<1-hop>
+
+个完整的模型输入提示的过程。
+
+Pruning（上下文裁剪）：按优先级算法（如基于时间衰减或重要度评分），强制丢弃低价值的中间执行回执。
+
+Session（会话/记忆容器）：承载多轮任务连续性的抽象，内部维护了状态与短/长记忆快照。
+
+Skill（技能）：文本化的方法固化机制，用于把高频任务的步骤、约束与验收标准沉淀为可复用流程；与插件
+
+并行使用，插件扩展能力，技能固化方法。
+
+SOUL.md（智能体身份配置）：定义智能体个性、角色与行为约束的配置文件，用于独立控制单一智能体的价值
+
+观与决策偏向。
+
+Tool（工具）：大模型与外部系统交互的原子执行单元，通常被严格划分为“读工具”（安全）与“写工具”（需要
+
+幂等与审计）。
+
+Token Budget（token 预算）：为了避免超出模型的 Context Window，系统对输入的各个部分（历史、
+
+检索结果、指令等）分配的 token 额度。
+
+Built with mdPress
+
+A.2 渠道与运维术语
+
+Webhook：外部系统通过 HTTP 回调主动触发 OpenClaw 任务的机制，用于异步事件驱动工作流。
+
+Pairing（设备配对）：通过设备身份、challenge-response、人工批准与令牌签发让新设备或 DM 发送者
+
+进入受信任集合；二维码或配对码只是常见引导方式之一。
+
+Hook（生命周期切面）：允许开发者在 Agent 调用的各个阶段（如提示词构建前、工具执行后）注入自定义
+
+逻辑的扩展点。
+
+Cron（定时作业）：OpenClaw Gateway 管理的定时任务系统，用于唤醒智能体执行自检、巡检、总结或清
+
+理任务，并在 ~/.openclaw/cron/ 下持久化任务状态。
+
+Rate Limit（限流）：对外部 API、模型调用或资源访问施加的流量上限，防止过载与配额超支。
+
+Cooldown（冷却期）：在重试或重新触发某个操作前，系统强制等待的最小时间间隔。
+
+Circuit Breaker（熔断器）：当某个依赖服务连续失败次数或错误率超过阈值时，系统主动断开连接、快速
+
+失败的保护机制。
+
+Runbook（运维手册）：记录处理系统故障、紧急回滚与例行排障步骤的标准文档。
+
+Guardrail（安全护栏）：由权限边界、沙箱隔离约束、内容风控引擎与审计系统等组合而成的防御矩阵集合。
+
+A.3 扩展与集成术语
+---
+<2-hop>
+
+带时区的 --at 时间按 UTC 解释；若要按本地墙上时间理解，应显式传入 --tz <IANA 时区>。
+
+管理与巡检：
+
+openclaw cron list              # 查看所有已注册作业及下次触发时间
+
+openclaw cron status            # 查看 cron 调度器健康度
+
+openclaw cron show <jobId>      # 查看单个作业详情
+
+openclaw cron run <jobId>       # 默认强制排队执行并立即返回；加 --due 才保持“到期才执行”
+
+openclaw cron enable <jobId>    # 启用指定作业
+
+openclaw cron disable <jobId>   # 禁用指定作业
+
+openclaw cron edit <jobId> --no-deliver
+
+openclaw cron runs --id <jobId> # 查看指定作业的执行历史
+
+openclaw cron remove <jobId>    # 移除指定作业（rm/remove/delete 等别名按当前 CLI 为准）
+
+openclaw status --deep          # 通用 Gateway 状态补充
+
+内建 Cron 作业支持 main、isolated、current、session:<id> 等会话目标（详见 8.3.8 选型决策树）：
+
+Built with mdPress
+
+主会话模式（--system-event / --session main）：作业通过系统事件注入主会话，由心跳链路执行，共享完
+
+整上下文，默认属于“静默任务”而不是主动通知。
+
+隔离会话模式（--message / --session isolated）：作业在独立的 cron:<jobId> 会话和 fresh
+
+transcript 中执行，不继承 ambient conversation routing/context；安全偏好、显式模型或认证
+
+覆盖仍可能按配置带入。runner 是否回退投递结果，要看 announce / webhook / none 配置，同时
+
+agent 也可能在作业内部主动使用 message 工具发送消息。"
+42,,,在联合索引中，为什么搜索条件必须包含最左边的列才能使用B+树索引？如果只使用phone_number列进行搜索，能否利用联合索引idx_name_birthday_phone_number？,因为B+树的数据页和记录先按照name列的值排序，在name列的值相同的情况下才使用birthday列进行排序，再在birthday相同的情况下按phone_number排序。如果跳过name列直接根据birthday或phone_number查找，这些列的值可能是无序的，所以无法使用索引。因此，只使用phone_number列进行搜索时，不能利用联合索引idx_name_birthday_phone_number，因为缺少了最左边的name列和中间的birthday列。,,,,"<1-hop>
+
+其实在我们的搜索语句中也可以不用包含全部联合索引中的列，只包含左边的就行，比方说下边的查询语句：
+
+SELECT * FROM person_info WHERE name = 'Ashburn';
+
+或者包含多个左边的列也行：
+
+SELECT * FROM person_info WHERE name = 'Ashburn' AND birthday = '1990-09-27';
+
+那为什么搜索条件中必须出现左边的列才可以使用到这个B+ 树索引呢？比如下边的语句就用不到这个B+ 树索引
+
+么？
+
+SELECT * FROM person_info WHERE birthday = '1990-09-27';
+
+是的，的确用不到，因为B+ 树的数据页和记录先是按照name 列的值排序的，在name 列的值相同的情况下才使
+
+用birthday 列进行排序，也就是说name 列的值不同的记录中birthday 的值可能是无序的。而现在你跳过
+
+name 列直接根据birthday 的值去查找，臣妾做不到呀～ 那如果我就想在只使用birthday 的值去通过B+ 树索
+
+引进行查找咋办呢？这好办，你再对birthday 列建一个B+ 树索引就行了，创建索引的语法不用我唠叨了吧。
+
+但是需要特别注意的一点是，如果我们想使用联合索引中尽可能多的列，搜索条件中的各个列必须是联合索引中
+
+从最左边连续的列。比方说联合索引idx_name_birthday_phone_number 中列的定义顺序是name 、
+
+birthday 、phone_number ，如果我们的搜索条件中只有name 和phone_number ，而没有中间的birthday ，
+
+比方说这样：
+
+SELECT * FROM person_info WHERE name = 'Ashburn' AND phone_number = '15123983239';
+
+这样只能用到name 列的索引，birthday 和phone_number 的索引就用不上了，因为name 值相同的记录先按照
+
+birthday 的值进行排序，birthday 值相同的记录才按照phone_number 值进行排序。
+---
+<2-hop>
+
+Rows
+
+本选项表示表中的记录条数。对于使用MyISAM 存储引擎的表来说，该值是准确的，对于使用InnoDB 存储引
+
+擎的表来说，该值是一个估计值。从查询结果我们也可以看出来，由于我们的single_table 表是使用
+
+InnoDB 存储引擎的，所以虽然实际上表中有10000条记录，但是SHOW TABLE STATUS 显示的Rows 值只有
+
+9693条记录。
+
+Data_length
+
+本选项表示表占用的存储空间字节数。使用MyISAM 存储引擎的表来说，该值就是数据文件的大小，对于使
+
+用InnoDB 存储引擎的表来说，该值就相当于聚簇索引占用的存储空间大小，也就是说可以这样计算该值的
+
+大小：
+
+Data_length = 聚簇索引的页面数量 x 每个页面的大小
+
+我们的single_table 使用默认16KB 的页面大小，而上边查询结果显示Data_length 的值是1589248 ，所
+
+以我们可以反向来推导出聚簇索引的页面数量：
+
+聚簇索引的页面数量 = 1589248 ÷ 16 ÷ 1024 = 97
+
+我们现在已经得到了聚簇索引占用的页面数量以及该表记录数的估计值，所以就可以计算全表扫描成本了，但是
+
+设计MySQL 的大叔在真实计算成本时会进行一些微调，这些微调的值是直接硬编码到代码里的，由于没有注
+
+释，我也不知道这些微调值是个啥子意思，但是由于这些微调的值十分的小，并不影响我们分析，所以我们也没
+
+有必要在这些微调值上纠结了。现在可以看一下全表扫描成本的计算过程：
+
+I/O 成本
+
+97 x 1.0 + 1.1 = 98.1
+
+97 指的是聚簇索引占用的页面数，1.0 指的是加载一个页面的成本常数，后边的1.1 是一个微调值，我们
+
+不用在意。
+
+CPU 成本：
+
+9693 x 0.2 + 1.0 = 1939.6
+
+9693 指的是统计数据中表的记录数，对于InnoDB 存储引擎来说是一个估计值，0.2 指的是访问一条记录
+
+所需的成本常数，后边的1.0 是一个微调值，我们不用在意。
+
+总成本：
+
+98.1 + 1939.6 = 2037.7
+
+综上所述，对于single_table 的全表扫描所需的总成本就是2037.7 。
+
+小贴士：
+
+我们前边说过表中的记录其实都存储在聚簇索引对应B+树的叶子节点中，所以只要我们通过根节点获得
+
+了最左边的叶子节点，就可以沿着叶子节点组成的双向链表把所有记录都查看一遍。也就是说全表扫描"
+43,,,在《AGENTS.md》中，如何根据多智能体配置原则，将客服语气、运维边界和分析报告模板等差异分别写入各自工作区的配置文件中，而不是塞进同一段内联提示词？请结合串联协作模式中协调Agent通过sessions_spawn或/subagents spawn发起子任务的方式，说明这种分离配置如何支持多Agent协作。,根据《AGENTS.md》的配置原则，每个Agent应拥有独立的工作区文件和状态目录，因此客服语气、运维边界和分析报告模板等差异应分别写入各自工作区的AGENTS.md、SOUL.md、USER.md文件中，而不是塞进同一段内联提示词。在串联协作模式中，协调Agent通过sessions_spawn或/subagents spawn发起后台子任务，每个子任务由独立的Agent执行，这些Agent各自加载其工作区中的配置文件，从而确保不同Agent拥有不同的语气、边界和模板，实现职责分离和灵活协作。,,,,"<1-hop>
+
+注意：当前多智能体配置强调“每个 Agent 一套工作区文件和状态目录”。像客服语气、运维边界、分析报告模
+
+板这类差异，推荐分别写进各自工作区的 AGENTS.md、SOUL.md、USER.md，而不是把所有人格差异都塞进同一段
+
+内联提示词。
+
+Built with mdPress
+
+16.2.3 三种协作编排模式
+
+当任务复杂到单个 Agent 无法独立完成时，需要多 Agent 协作。以下三种模式覆盖了大多数生产场景：
+
+模式一：串联（顺序委托）
+
+前一个 Agent 的输出作为后一个 Agent 的输入，适用于有明确前后依赖的流水线。
+
+用户请求
+
+协调 Agent
+
+任务分解
+
+分析 Agent
+
+数据处理
+
+校验 Agent
+
+质量检查
+
+最终结果
+
+图 16-1：串联协作模式
+
+典型场景：用户提交研究请求 → 协调 Agent 分解为子任务 → 分析 Agent 执行数据分析 → 校验 Agent 检查
+
+结果质量 → 返回最终报告。
+
+实现方式：协调 Agent 通过 sessions_spawn 或 /subagents spawn 发起后台子任务；/subagents spawn 立即
+
+返回 run id，sessions_spawn 返回 runId / childSessionKey，完成后由 OpenClaw push / announce 结
+
+果。只有在 ACP/acpx backend 已安装、启用并可用时，才应使用 sessions_spawn({ runtime: ""acp"" })；默
+
+认 Codex 路径应走原生 Codex app-server /codex 与 openai/* runtime。
+
+模式二：并联（同步扇出）
+
+多个 Agent 同时处理独立的子任务，最后汇聚结果。适用于子任务之间没有依赖的场景。
+
+Built with mdPress"
+44,,,在开发插件时，如何利用 status --deep 与日志回放来解释工具被拒绝或执行失败的原因？,通过 status --deep 可以获取工具执行的详细状态信息，结合日志回放可以追溯工具被拒绝或执行失败的具体步骤和原因，从而定位问题。,,,,"<1-hop>
+
+完成本章的阅读后，你将能够：
+
+1. 开发插件：理解插件开发的整个工程体系。
+
+2. 编写工具：设计安全、可控的自定义工具。
+
+3. 测试扩展：建立完整的测试与调试流程。
+
+4. 上线部署：从开发到生产的完整交付流程。
+
+Built with mdPress
+---
+<2-hop>
+
+是否能用 status --deep 与日志回放解释一次工具被拒绝或执行失败的原因？
+
+是否具备一套最小用例验证“该允许的允许、该拒绝的拒绝”？
+
+是否能在出现异常时快速停用扩展能力并回滚到安全状态？"
+45,,,session.reset 怎么用？,session.reset 是用于调整会话重置策略的参数，在会话/内存异常诊断流程中，当检查 session.dmScope / reset 是否符合预期时，若不符合，可调整会话作用域或重置策略，即调整 session.dmScope 或 session.reset。,,,,"<1-hop>
+
+检查插件或外部 API
+
+是否有相关数据
+
+检查具体工具/插件缓存
+
+不要假设内置 Redis
+
+检查工具输出格式
+
+查看工具文档
+
+验证输出schema
+
+工具应该成功执行
+
+图 15-5：工具执行失败诊断决策树
+
+15.1.7 会话与记忆层：会话与内存异常诊断流程
+
+当遇到上下文丢失、重复回答或内存溢出时，使用此诊断流程定位根因。
+
+Built with mdPress
+
+上下文丢失
+
+重复回答
+
+内存溢出
+
+启动后立即丢失
+
+检查配置
+
+否
+
+是
+
+sessions.json
+
+jsonl
+
+多轮对话中丢失
+
+查看配置
+
+过于激进
+
+合理
+
+过低
+
+合理
+
+新会话重复old答案
+
+检查日志
+
+发现ID重复
+
+ID不同
+
+存储混淆
+
+同一会话中重复
+
+过频
+
+检查
+
+持续增长
+
+峰值突增后降低
+
+峰值后无降低
+
+缓存未清理
+
+外部连接未释放
+
+会话文件过大
+
+会话/内存异常
+
+症状
+
+消息历史丢失
+
+记忆混乱
+
+OOM错误
+
+什么时间点丢失？
+
+会话初始化问题
+
+会话存储配置
+
+查看会话存储与作用域
+
+openclaw status
+
+openclaw sessions --json
+
+session.dmScope / reset 是
+
+否符合预期？
+
+调整会话作用域或重置策略
+
+session.dmScope
+
+/
+
+session.reset
+
+检查会话文件与 transcript
+
+openclaw sessions cleanup
+
+--dry-run
+
+检查对应 session transcript
+
+上下文压缩过度
+
+当前压缩策略
+
+检
+
+查
+
+agents.defaults.compaction
+
+调
+
+整
+
+compaction
+
+/
+
+keepRecentTokens
+
+检查模型上下文预算
+
+provider contextTokens
+
+调整模型上下文预算
+
+查看日志与会话上下文
+
+openclaw logs --limit 500 --
+
+json
+
+聊天内使用 /context detail
+
+何时开始重复？
+
+会话隔离失败
+
+查看openclaw日志
+
+openclaw logs
+
+检查sessionId生成逻辑
+
+检查记忆存储隔离
+
+检查 session key 与
+
+dmScope
+
+摘要生成过度
+
+检查 compaction 次数与摘
+
+要
+
+调高压缩阈值或保留近期上
+
+下文
+
+内存占用情况
+
+用宿主机等价工具查看
+
+OpenClaw 进程资源占用
+
+内存使用趋势
+
+内存泄漏
+
+GC正常工作
+
+内存泄漏
+
+排查泄漏源
+
+检查具体插件/工具缓存配置
+
+检查相关插件或下游 SDK
+
+检查 session.maintenance
+
+maxEntries / maxDiskBytes
+
+查阅已知泄漏
+
+或升级补丁版本
+
+会话和内存正常"
+46,,,innodb_log_file_size 参数有什么作用？,innodb_log_file_size 参数指定了每个 redo 日志文件的大小，在 MySQL 5.7.21 版本中默认值为 48MB。,,,,"<1-hop>
+
+MySQL 的数据目录（使用SHOW VARIABLES LIKE 'datadir' 查看）下默认有两个名为ib_logfile0 和
+
+ib_logfile1 的文件，log buffer 中的日志默认情况下就是刷新到这两个磁盘文件中。如果我们对默认的
+
+redo 日志文件不满意，可以通过下边几个启动参数来调节：
+
+innodb_log_group_home_dir
+
+该参数指定了redo 日志文件所在的目录，默认值就是当前的数据目录。
+
+innodb_log_file_size
+
+该参数指定了每个redo 日志文件的大小，在MySQL 5.7.21 这个版本中的默认值为48MB ，
+
+innodb_log_files_in_group
+
+该参数指定redo 日志文件的个数，默认值为2，最大值为100。
+
+从上边的描述中可以看到，磁盘上的redo 日志文件不只一个，而是以一个日志文件组的形式出现的。这些文件
+
+以ib_logfile[数字] （数字可以是0 、1 、2 ...）的形式进行命名。在将redo 日志写入日志文件组时，是
+
+从ib_logfile0 开始写，如果ib_logfile0 写满了，就接着ib_logfile1 写，同理，ib_logfile1 写满了就去
+
+写ib_logfile2 ，依此类推。如果写到最后一个文件该咋办？那就重新转到ib_logfile0 继续写，所以整个过程
+
+如下图所示：
+
+总共的redo 日志文件大小其实就是：innodb_log_file_size × innodb_log_files_in_group 。
+
+小贴士：如果采用循环使用的方式向redo日志文件组里写数据的话，那岂不是要追尾，也就是后写入的
+
+redo日志覆盖掉前边写的redo日志？当然可能了！所以设计InnoDB的大叔提出了checkpoint的概念，稍
+
+后我们重点唠叨～"
+47,,,在MySQL中，Buffer Pool的大小可以通过哪个参数进行配置？该参数的默认值和最小值分别是多少？,Buffer Pool的大小可以通过innodb_buffer_pool_size参数进行配置。默认情况下，Buffer Pool的大小为128M。Buffer Pool的最小值为5M，当设置的值小于5M时会自动调整为5M。,,,,"<1-hop>
+
+设计InnoDB 的大叔为了缓存磁盘中的页，在MySQL 服务器启动的时候就向操作系统申请了一片连续的内存，他
+
+们给这片内存起了个名，叫做Buffer Pool （中文名是缓冲池）。那它有多大呢？这个其实看我们机器的配
+
+置，如果你是土豪，你有512G 内存，你分配个几百G作为Buffer Pool 也可以啊，当然你要是没那么有钱，设
+
+置小点也行呀～ 默认情况下Buffer Pool 只有128M 大小。当然如果你嫌弃这个128M 太大或者太小，可以在启
+
+动服务器的时候配置innodb_buffer_pool_size 参数的值，它表示Buffer Pool 的大小，就像这样：
+
+[server]
+
+innodb_buffer_pool_size = 268435456
+
+其中，268435456 的单位是字节，也就是我指定Buffer Pool 的大小为256M 。需要注意的是，Buffer Pool 也
+
+不能太小，最小值为5M (当小于该值时会自动设置成5M )。"
+48,,,primary 在上下文1和2中分别指什么？,在上下文1中，primary 指模型或回退链路中的主要选项；在上下文2中，primary 指聚簇索引，即PRIMARY索引。,,,,"<1-hop>
+
+操作示例：先确认模型可用，再跑最小用例回归。
+
+openclaw models status
+
+openclaw models status --probe
+
+当更换 primary 或调整回退链路时，建议固定一组用例回归，至少包含：
+
+事实性用例。
+
+工具型用例。
+
+多轮上下文用例。
+
+把回归结果与成本、延迟一起记录，才能避免“看似更聪明但更不稳定”的回归。
+
+Built with mdPress
+---
+<2-hop>
+
+直接对聚簇索引进行加锁，所以索引信息指的其实就是PRIMARY 索引。
+
+由于是行锁，所以接下来需要记录是三个重要信息：
+
+Space ID ：表空间号为67 。
+
+Page Number ：页号为3 。
+
+n_bits ：此属性生成策略同T1 中一样，该属性的值为72 。
+
+type_mode 是由三部分组成的：
+
+lock_mode ，这是对记录加X锁，它的值为LOCK_X 。
+
+lock_type ，这是对记录进行加锁，也就是行锁，所以它的值为LOCK_REC 。
+
+rec_lock_type ，这是对记录加next-key锁，也就是类型为LOCK_ORDINARY 的锁。
+
+- 其他信息
+
+略～
+
+不同的属性如下：
+
+- 为`number`为`3`、`8`的记录生成的`锁结构`：
+
+- `type_mode`值。
+
+由于可以获取到锁，所以`is_waiting`属性为`false`，也就是`LOCK_WAIT`代表的二进制位被
+
+置0。所以：
+
+```
+
+type_mode = LOCK_X | LOCK_REC |LOCK_ORDINARY
+
+也就是
+
+type_mode = 3 | 32 | 0 = 35
+
+```
+
+- `一堆比特位`
+
+因为`number`值为`3`、`8`的记录`heap_no`值分别为`3`、`4`，根据上边列举的比特位和`he
+
+ap_no`的映射图来看，应该是第一个字节从低位往高位数第4、5个比特位被置为1，就像这样：
+
+![image_1d9krhp4f1gd7hb4nhv1j182cb2q.png-21.2kB][17]
+
+综上所述，事务`T2`为`number`值为`3`、`8`两条记录加锁生成的锁结构就如下图所示：
+
+![image_1d9krl3im1qr2tb4k1810bs18ak37.png-40.4kB][18]
+
+- 为`number`为`15`的记录生成的`锁结构`：
+
+- `type_mode`值。
+
+由于可以获取到锁，所以`is_waiting`属性为`true`，也就是`LOCK_WAIT`代表的二进制位被
+
+置1。所以：
+
+```
+
+type_mode = LOCK_X | LOCK_REC |LOCK_ORDINARY | LOCK_WAIT
+
+也就是
+
+type_mode = 3 | 32 | 0 | 256 = 291
+
+```
+
+- `一堆比特位`"
+49,,,sessions.json 文件在会话与记忆层异常诊断流程中扮演什么角色？,在会话与记忆层异常诊断流程中，当遇到上下文丢失、重复回答或内存溢出时，需要检查会话文件与 transcript，其中 sessions.json 是用于存储会话数据的文件，通过检查该文件可以定位会话初始化问题或存储混淆等根因。,,,,"<1-hop>
+
+检查插件或外部 API
+
+是否有相关数据
+
+检查具体工具/插件缓存
+
+不要假设内置 Redis
+
+检查工具输出格式
+
+查看工具文档
+
+验证输出schema
+
+工具应该成功执行
+
+图 15-5：工具执行失败诊断决策树
+
+15.1.7 会话与记忆层：会话与内存异常诊断流程
+
+当遇到上下文丢失、重复回答或内存溢出时，使用此诊断流程定位根因。
+
+Built with mdPress
+
+上下文丢失
+
+重复回答
+
+内存溢出
+
+启动后立即丢失
+
+检查配置
+
+否
+
+是
+
+sessions.json
+
+jsonl
+
+多轮对话中丢失
+
+查看配置
+
+过于激进
+
+合理
+
+过低
+
+合理
+
+新会话重复old答案
+
+检查日志
+
+发现ID重复
+
+ID不同
+
+存储混淆
+
+同一会话中重复
+
+过频
+
+检查
+
+持续增长
+
+峰值突增后降低
+
+峰值后无降低
+
+缓存未清理
+
+外部连接未释放
+
+会话文件过大
+
+会话/内存异常
+
+症状
+
+消息历史丢失
+
+记忆混乱
+
+OOM错误
+
+什么时间点丢失？
+
+会话初始化问题
+
+会话存储配置
+
+查看会话存储与作用域
+
+openclaw status
+
+openclaw sessions --json
+
+session.dmScope / reset 是
+
+否符合预期？
+
+调整会话作用域或重置策略
+
+session.dmScope
+
+/
+
+session.reset
+
+检查会话文件与 transcript
+
+openclaw sessions cleanup
+
+--dry-run
+
+检查对应 session transcript
+
+上下文压缩过度
+
+当前压缩策略
+
+检
+
+查
+
+agents.defaults.compaction
+
+调
+
+整
+
+compaction
+
+/
+
+keepRecentTokens
+
+检查模型上下文预算
+
+provider contextTokens
+
+调整模型上下文预算
+
+查看日志与会话上下文
+
+openclaw logs --limit 500 --
+
+json
+
+聊天内使用 /context detail
+
+何时开始重复？
+
+会话隔离失败
+
+查看openclaw日志
+
+openclaw logs
+
+检查sessionId生成逻辑
+
+检查记忆存储隔离
+
+检查 session key 与
+
+dmScope
+
+摘要生成过度
+
+检查 compaction 次数与摘
+
+要
+
+调高压缩阈值或保留近期上
+
+下文
+
+内存占用情况
+
+用宿主机等价工具查看
+
+OpenClaw 进程资源占用
+
+内存使用趋势
+
+内存泄漏
+
+GC正常工作
+
+内存泄漏
+
+排查泄漏源
+
+检查具体插件/工具缓存配置
+
+检查相关插件或下游 SDK
+
+检查 session.maintenance
+
+maxEntries / maxDiskBytes
+
+查阅已知泄漏
+
+或升级补丁版本
+
+会话和内存正常"
+50,,,在技能目录 skills/ 中安装的技能文件，其读取时机和加载策略是怎样的？,根据上下文，skills/ 是当前工作区的技能目录，openclaw skills install 默认会把技能装到当前工作区的 skills/ 下。但关于具体的读取时机与加载策略，上下文指出将在后续章节展开，未提供详细信息。,,,,"<1-hop>
+
+BOOTSTRAP.md：只为全新工作区创建的一次性首跑仪式文件，用完即可删除。
+
+BOOT.md：不是默认 bootstrap 文件，也不是常规 prompt 注入文件；只有文件存在且启用
+
+bundled boot-md hook 时，才会在 Gateway startup 阶段执行。
+
+HEARTBEAT.md：Heartbeat 的专用清单文件；文件存在时属于 workspace/bootstrap prompt
+
+文件，轻量 heartbeat 模式会只保留它而跳过其它 workspace bootstrap 文件。
+
+memory/：记忆或 hook 写入目录，属于运行期数据面，不应理解成“每轮自动等量加载”。
+
+MEMORY.md：可选的长期记忆索引，更适合沉淀稳定事实。
+
+skills/：当前工作区的技能目录；openclaw skills install 默认也会把技能装到当前工作区
+
+的 skills/ 下。
+
+各文件的详细职责、读取时机与加载策略将在后续章节展开：人格配置见第 3 章，心跳与定时任务
+
+见第 8 章，上下文管理见第 6 章。
+
+💡 Tip
+
+这些文件都是普通 Markdown，可以随时用任何编辑器修改。若你修改了 AGENTS.md、
+
+SOUL.md 等工作区指令文件，通常从下一次新会话开始生效；无需把“是否生效”理解成必须
+
+重启 Gateway。"
