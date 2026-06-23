@@ -23,7 +23,7 @@ probe → admit → classify，同时算 scope）→ 按路由计划顺序执行
 """
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from llama_index.core import get_response_synthesizer
@@ -111,6 +111,10 @@ class AnswerDeltaEvent(Event):
     delta: str
 
 
+class ThinkingStartEvent(Event):
+    """并发 workers 预合成阶段开始（→ 前端 spinner + 计时）。无字段，纯标记。"""
+
+
 @dataclass
 class _SubDecision:
     """单个子问题的判定结果：可答性 verdict + （ok 时）类型 category。"""
@@ -121,6 +125,39 @@ class _SubDecision:
     reason: str = ""
     clarify_question: str = ""
     scope: Optional[list[str]] = None
+
+
+@dataclass
+class Material:
+    """单个子问题/路线交给合成 agent 的材料。worker→combiner 契约。
+
+    verdict: ok（已检索散文分答案）/ converse（元问题，合成 agent 现写）/
+             missing_info / clarify（需澄清，按 reason 追问）/ out_of_scope（库外，如实告知）。
+    """
+
+    query: str
+    answer: str = ""
+    nodes: list = field(default_factory=list)
+    verdict: str = "ok"
+    category: str = ""
+    reason: str = ""
+
+
+class _DeltaSuppressingCtx:
+    """包装真实 ctx：worker 并发执行时吞掉 AnswerDeltaEvent（不外流 token，散文分答案靠返回值），
+    RetrievalStart/Done 等其余事件与 store 等属性一律透传。只有合成 agent 才往外流 token。
+    """
+
+    def __init__(self, ctx):
+        self._ctx = ctx
+
+    def write_event_to_stream(self, ev) -> None:
+        if ev.__class__.__name__ == "AnswerDeltaEvent":
+            return
+        self._ctx.write_event_to_stream(ev)
+
+    def __getattr__(self, name):
+        return getattr(self._ctx, name)
 
 
 class QaCapability:
