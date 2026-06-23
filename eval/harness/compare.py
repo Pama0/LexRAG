@@ -19,6 +19,97 @@ from eval.harness.report import (
     write_detail_csv,
 )
 
+import json
+from time import perf_counter
+
+from eval.harness.metrics import METRIC_NAMES, MetricSpec  # noqa: F401
+from eval.harness.sut import RagOutput
+
+
+# 「拒答类」金标准：正确行为是反问澄清 / 告知库外，而非给出可被 ragas 打分的答案。
+# 按金标准 expected_category 把这两类的指标归 null（对所有被测系统一致），避免污染质量均值。
+REFUSE_CATEGORIES = frozenset({"missing_info", "out_of_scope"})
+
+
+def load_testset(path: str) -> list[dict]:
+    rows: list[dict] = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def _row_to_dict(row) -> dict:
+    """把测试集行（dict / pydantic / 带属性对象）归一成 dict。"""
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "model_dump"):
+        return row.model_dump()
+    if hasattr(row, "__dict__"):
+        return dict(vars(row))
+    keys = ["user_input", "reference", "reference_contexts"]
+    return {k: getattr(row, k, None) for k in keys}
+
+
+async def score_row(
+    row: dict, sut, metric_specs: list[MetricSpec], meter=None
+) -> dict:
+    if meter is not None:
+        meter.reset()
+    t0 = perf_counter()
+    out: RagOutput = await sut.answer(row["user_input"])
+    latency_s = perf_counter() - t0
+    base = {
+        "user_input": row["user_input"],
+        "reference": row.get("reference", ""),
+        "response": out.response,
+        "outcome": out.outcome,
+        "expected_category": row.get("category", ""),
+        "num_contexts": len(out.retrieved_contexts),
+        "latency_s": round(latency_s, 3),
+    }
+    if meter is not None:
+        base.update(meter.read())
+    if out.outcome != "answered" or base["expected_category"] in REFUSE_CATEGORIES:
+        return base
+    for spec in metric_specs:
+        try:
+            result = await spec.metric.ascore(**spec.kwargs(row, out))
+            base[spec.name] = result.value
+        except Exception as e:  # noqa: BLE001 — 单指标失败不影响其他指标
+            base[spec.name] = None
+            base[f"{spec.name}_error"] = f"{type(e).__name__}: {e}"
+    return base
+
+
+def aggregate(rows: list[dict]) -> dict:
+    """指标均值（仅 answered 行、忽略 None）+ outcome 分布 + 成本。"""
+    outcomes: dict[str, int] = {}
+    for r in rows:
+        oc = r.get("outcome", "error")
+        outcomes[oc] = outcomes.get(oc, 0) + 1
+    answered = [r for r in rows if r.get("outcome") == "answered"]
+    metric_means: dict[str, float | None] = {}
+    for name in METRIC_NAMES:
+        vals = [r[name] for r in answered if r.get(name) is not None]
+        metric_means[name] = (sum(vals) / len(vals)) if vals else None
+    latencies = [r["latency_s"] for r in rows if r.get("latency_s") is not None]
+    token_vals = [r["total_tokens"] for r in rows if r.get("total_tokens") is not None]
+    cost = {
+        "mean_latency_s": (sum(latencies) / len(latencies)) if latencies else None,
+        "mean_total_tokens": (sum(token_vals) / len(token_vals)) if token_vals else None,
+        "total_tokens": sum(token_vals) if token_vals else None,
+    }
+    return {
+        "total": len(rows),
+        "answered": len(answered),
+        "outcome_distribution": outcomes,
+        "metric_means": metric_means,
+        "cost": cost,
+    }
+
 
 # 变体矩阵：baseline 全单轮无 agent，逐个打开决策
 VARIANTS = {
@@ -64,7 +155,7 @@ async def _run_variants(testset_path, limit, names, concurrency: int = 1):
     from eval.config import CHROMA_DIR, make_eval_embeddings, make_eval_llm
     from eval.harness.metrics import build_metric_specs
     from eval.harness.meter import attach_token_meter
-    from eval.harness.run_eval import load_testset, score_row, aggregate
+    # load_testset/score_row/aggregate 已是本模块局部函数
     from configs.embedding import configure_embedding
     from configs.llm import configure_llm
     from core.rag.data_loader import RAGIndexManager
@@ -112,7 +203,7 @@ def _progress(done: int, total: int, t0: float) -> None:
 
 async def _score_rows_serial(rows, sut, metric_specs, meter, total, t0):
     """串行：保留逐行 token 计量（meter reset/read 在 score_row 内、单行独占无串扰）。"""
-    from eval.harness.run_eval import score_row
+    # score_row 已是本模块局部函数
 
     scored = []
     for ri, r in enumerate(rows, 1):
@@ -124,7 +215,7 @@ async def _score_rows_serial(rows, sut, metric_specs, meter, total, t0):
 
 async def _score_rows_parallel(rows, sut, metric_specs, meter, total, t0, concurrency):
     """并行：信号量限流 gather；逐行不计 token，变体跑完打印一次总量。"""
-    from eval.harness.run_eval import score_row
+    # score_row 已是本模块局部函数
 
     meter.reset()
     sem = asyncio.Semaphore(concurrency)
