@@ -251,12 +251,15 @@ def _format_event(ev) -> dict | None:
     """把 DocQueryWorkflow 流式事件映射成前端已有的 SSE payload。
 
     复用前端的 tool_call→tool_result→delta 状态机（前端零改动）：
+    - ThinkingStartEvent  → thinking（前端起 spinner + 计时，收到首个 delta 即停）
     - RetrievalStartEvent → tool_call（前端显示"调用检索"）
     - RetrievalDoneEvent  → tool_result（前端据此进入"答案阶段"）
     - AnswerDeltaEvent    → delta（逐 token 流入答案区）
     """
     name = ev.__class__.__name__
 
+    if name == "ThinkingStartEvent":
+        return {"type": "thinking"}
     if name == "RetrievalStartEvent":
         return {
             "type": "tool_call",
