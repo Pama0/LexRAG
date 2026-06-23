@@ -4,12 +4,11 @@
 直接子节点标题作为拆解骨架。纯函数，无 LLM / chroma 依赖，便于单测。
 """
 import re
-from typing import Optional
 
 _NUM_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)")
 
 
-def chapter_number(heading: str) -> Optional[tuple[int, ...]]:
+def chapter_number(heading: str) -> tuple[int, ...] | None:
     """'1.2.1  工具A' -> (1, 2, 1)；无前导编号 -> None。"""
     if not heading:
         return None
@@ -19,7 +18,7 @@ def chapter_number(heading: str) -> Optional[tuple[int, ...]]:
     return tuple(int(x) for x in m.group(1).split("."))
 
 
-def unique_chapters(metadatas: list, book_title: Optional[str] = None) -> list[str]:
+def unique_chapters(metadatas: list, book_title: str | None = None) -> list[str]:
     """从元数据列表抽该书去重 chapter（保序，去空）。book_title=None 不过滤。"""
     seen: set = set()
     out: list[str] = []
@@ -38,7 +37,7 @@ def unique_chapters(metadatas: list, book_title: Optional[str] = None) -> list[s
 
 def dominant_prefix(
     hit_chapters: list[str], threshold: float = 0.5
-) -> Optional[tuple[int, ...]]:
+) -> tuple[int, ...] | None:
     """命中 chapter 的主导编号前缀：被 >=threshold 命中共享的最深前缀。
 
     逐层下钻：每层取出现最多的前缀，若其占比 >= threshold*总数 且延续上层前缀，
@@ -68,7 +67,7 @@ def dominant_prefix(
     return prefix or None
 
 
-def children(all_chapters: list[str], prefix: Optional[tuple[int, ...]]) -> list[str]:
+def children(all_chapters: list[str], prefix: tuple[int, ...] | None) -> list[str]:
     """prefix 下的直接子节点标题（按编号排序）。
 
     prefix=None / () -> 顶层骨架：每个一级编号分组取 path 最浅的标题。

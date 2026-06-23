@@ -122,7 +122,7 @@ async def main():
               f"{r['probe_hits']:<5}{r['user_input'][:26]}{mark}")
     print("-" * 96)
     by = Counter(r["suggested_category"] for r in rows)
-    print(f"建议分桶: " + "  ".join(f"{k}={v}" for k, v in by.items()))
+    print("建议分桶: " + "  ".join(f"{k}={v}" for k, v in by.items()))
     print(f"建议 vs SUT 一致率: {agree}/{len(rows)}")
     print(f"已写 {out}")
 

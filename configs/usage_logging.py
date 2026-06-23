@@ -10,7 +10,7 @@ DeepSeek 的缓存命中字段 prompt_cache_hit_tokens / prompt_cache_miss_token
 缺失即跳过，不报错。
 """
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import llama_index.core.instrumentation as instrument
 from llama_index.core.instrumentation.event_handlers import BaseEventHandler
@@ -60,7 +60,7 @@ class CacheUsageEventHandler(BaseEventHandler):
         )
 
     @staticmethod
-    def _extract_usage(resp: Any) -> Optional[Any]:
+    def _extract_usage(resp: Any) -> Any | None:
         """从 ChatResponse.raw 取 usage。raw 可能是对象（ChatCompletion）或 dict。"""
         if resp is None:
             return None

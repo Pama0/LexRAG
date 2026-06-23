@@ -479,7 +479,7 @@ Expected: `ok`，无 ImportError（确认 `AgentService` 已无残留引用）
 - [ ] **Step 7: 提交**
 
 ```bash
-git add core/agent/agent.py api/main.py api/routers/chat.py api/routers/sessions.py
+git add core/agent/agent.py api/chat.py api/routers/chat.py api/routers/sessions.py
 git commit -m "refactor(agent): unify main agent into core BookAgent, drop api AgentService"
 ```
 
@@ -569,7 +569,7 @@ Expected: `DB_PATH=` 指向**项目根**的 `bookkb.db`（路径末尾是 `llmaL
 - [ ] **Step 8: 提交**
 
 ```bash
-git add -A core/persistence api/routers/chat.py api/routers/sessions.py api/main.py
+git add -A core/persistence api/routers/chat.py api/routers/sessions.py api/chat.py
 git commit -m "refactor(persistence): move SQLite layer into core/persistence, fix db path depth"
 ```
 
@@ -692,7 +692,7 @@ git commit -m "refactor: freeze legacy legal code under legacy/, keep trunk book
 """book 知识库助手 CLI 入口。
 
 组装 core 组件 + book 工具 + 主 agent，进入交互式对话。
-（Web 服务入口见 api/main.py：python -m uvicorn api.main:app）
+（Web 服务入口见 api/chat.py：python -m uvicorn api.main:app）
 """
 import asyncio
 import logging
@@ -823,7 +823,7 @@ Expected: `cli importable`（`import main` 只触发 import，不执行 `asyncio
 - [ ] **Step 5: 提交**
 
 ```bash
-git add main.py core/workflow/README.md CLAUDE.md
+git add chat.py core/workflow/README.md CLAUDE.md
 git commit -m "refactor: book CLI entrypoint, workflow->tool seam docs, update CLAUDE.md"
 ```
 

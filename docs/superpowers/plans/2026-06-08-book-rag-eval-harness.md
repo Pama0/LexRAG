@@ -822,7 +822,7 @@ async def generate(size: int) -> None:
 
     chunks = load_book_chunks()
     if not chunks:
-        raise SystemExit("chroma 无 book 切片，先入库（python main.py 入库流程）再生成测试集")
+        raise SystemExit("chroma 无 book 切片，先入库（python chat.py 入库流程）再生成测试集")
 
     gen_llm = make_eval_llm()
     gen_emb = make_eval_embeddings()

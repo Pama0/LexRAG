@@ -124,14 +124,14 @@ async def generate(size: int, max_chunks: int | None = 60, seed: int = 42,
                    book_filter: str | None = None) -> None:
     from ragas.testset import TestsetGenerator
     from ragas.testset.persona import Persona
-    from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
     from ragas.testset.synthesizers.multi_hop.specific import MultiHopSpecificQuerySynthesizer
+    from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
 
     from eval.config import DATASET_DIR, TESTSET_DRAFT_PATH, make_eval_embeddings, make_eval_llm
 
     chunks = load_book_chunks(max_chunks=max_chunks, seed=seed, book_filter=book_filter)
     if not chunks:
-        raise SystemExit("chroma 无 book 切片，先入库（python main.py 入库流程）再生成测试集")
+        raise SystemExit("chroma 无 book 切片，先入库（python chat.py 入库流程）再生成测试集")
 
     gen_llm = make_eval_llm()
     gen_emb = make_eval_embeddings()

@@ -124,7 +124,7 @@ async def main():
               f"{r['n_distinct_chapters']:<5}{r['dominant_share']:<7}{r['user_input'][:30]}{mark}")
     print("-" * 96)
     by = Counter(r["suggested_category"] for r in rows)
-    print(f"建议分桶: " + "  ".join(f"{k}={v}" for k, v in by.items()))
+    print("建议分桶: " + "  ".join(f"{k}={v}" for k, v in by.items()))
     print(f"建议 vs SUT 一致率: {agree}/{len(rows)}")
     print(f"已写 {out}")
 

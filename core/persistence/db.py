@@ -5,18 +5,17 @@
 - 启动时自动建表
 """
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncIterator, Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, select
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DB_PATH = os.path.join(PROJECT_ROOT, "bookkb.db")
@@ -38,7 +37,7 @@ class SessionRow(Base):
     )
     # 上下文压缩：远期历史的滚动摘要 + 已折入摘要的最大消息 id（水位）。
     # 见 core/workflow/summarizer.py（持久化增量摘要）。
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     summarized_upto_id: Mapped[int] = mapped_column(default=0)
 
     messages: Mapped[list["MessageRow"]] = relationship(
@@ -58,7 +57,7 @@ class MessageRow(Base):
     role: Mapped[str] = mapped_column(String(16))  # user / assistant
     content: Mapped[str] = mapped_column(Text)
     # sources 序列化为 JSON 字符串；为简单不引 JSON 列类型
-    sources_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sources_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     session: Mapped[SessionRow] = relationship(back_populates="messages")

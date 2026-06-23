@@ -3,9 +3,9 @@ import pytest
 
 from core.agent.tools import BookSearchTool, ListBooksTool
 from core.agent.tools.book_tools import (
+    _TOOL_REGISTRY,
     ToolContext,
     ToolSpec,
-    _TOOL_REGISTRY,
     assemble_tools,
     build_book_tools,
     register_tool,

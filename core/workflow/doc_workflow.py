@@ -24,7 +24,6 @@ api 层按既有路径 import；它们不参与 workflow step 图。
 未完成处以 TODO 标注（study_plan 能力）。
 """
 import logging
-from typing import Optional
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.base.response.schema import Response
@@ -39,24 +38,24 @@ from llama_index.core.workflow import (
     step,
 )
 
-from core.workflow.components.front_door import FrontDoor, RoutedSubQuery, format_history
+from core.agent.qa_agent import QaAgent
+from core.retrieval.rerank import make_reranker
+from core.retrieval.retrieve import make_retriever
 from core.workflow.components.combiner import Combiner
+from core.workflow.components.front_door import FrontDoor, RoutedSubQuery, format_history
 from core.workflow.qa_capability import (  # noqa: F401  (事件类 re-export 供 api 层 import)
+    REFUSAL_FALLBACK,
+    REFUSAL_TEXT,
     AnswerDeltaEvent,
     EmptySkeleton,
     Material,
     MissingInfo,
     OutOfScope,
     QaCapability,
-    REFUSAL_FALLBACK,
-    REFUSAL_TEXT,
     RetrievalDoneEvent,
     RetrievalStartEvent,
     ThinkingStartEvent,
 )
-from core.agent.qa_agent import QaAgent
-from core.retrieval.rerank import make_reranker
-from core.retrieval.retrieve import make_retriever
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +65,7 @@ class CleanEvent(Event):
     """start → lean。纯信号；query 从 ctx 取。"""
 
 class SplitEvent(Event):
-    """clean → split（净化 + 意图分类）。纯信号；query 从 ctx 取。"""
-
-class RouteEvent(Event):
-    """split → router（意图分类)。纯信号；query 从 ctx 取。"""
+    """clean → split（拆子问题）。纯信号；query 从 ctx 取。"""
 
 
 class DirectReplyEvent(Event):
@@ -121,9 +117,7 @@ class DocQueryWorkflow(Workflow):
         super().__init__(**kw)
         # 门口 FrontDoor（净化/拆分/路由三步解耦）与 QA capability（降噪分类 + 检索合成）
         # 各自独立、各自可测。检索/合成实质逻辑全在 qa，本 workflow 只编排 + 委托。
-        self.front_door = FrontDoor(
-            llm, index_manager, probe_retriever=make_retriever(probe_retriever)
-        )
+        self.front_door = FrontDoor(llm, index_manager)
         self.qa = QaCapability(
             index_manager, llm, similarity_top_k, max_sub_queries,
             reranker=make_reranker(reranker),
@@ -148,6 +142,9 @@ class DocQueryWorkflow(Workflow):
     # ── 入口：把 memory + 原始 query + scope 全塞进 ctx，贯穿全程 ──
     @step
     async def start(self, ctx: Context, ev: StartEvent) -> CleanEvent:
+        # 一收到问题就发 ThinkingStartEvent（前端起 spinner + 计时）——覆盖 clean/split
+        # 等前置阶段的等待，而非拖到 qa_branch 才亮。
+        ctx.write_event_to_stream(ThinkingStartEvent())
         # memory 是调用方（API handler）从 DB 重建的 ChatMemoryBuffer
         await ctx.store.set("memory", getattr(ev, "memory", None))
         await ctx.store.set("original_query", ev.query)  # 工作态：用户原话
@@ -158,48 +155,26 @@ class DocQueryWorkflow(Workflow):
     @step
     async def clean_question(self,ctx: Context, ev: CleanEvent) -> SplitEvent | DirectReplyEvent:
         original = await ctx.store.get("original_query")
-        memory: Optional[ChatMemoryBuffer] = await ctx.store.get("memory")
+        memory: ChatMemoryBuffer | None = await ctx.store.get("memory")
         clean_query, is_missing_info, missing_reason = await self.front_door.clean(
             original, memory
         )
         # 缺信息（指代无法消解等）→ 不进检索，直接反问用户补全
         if is_missing_info:
+            logger.info("missing reason: %s", missing_reason)
             return DirectReplyEvent(reply=missing_reason, action="clarify")
         await ctx.store.set("clean_query", clean_query)
         return SplitEvent()
 
     @step
-    async def split_query(self, ctx: Context, ev: SplitEvent) -> RouteEvent:
+    async def split_query(self, ctx: Context, ev: SplitEvent) -> QaEvent:
+        # clean 已滤掉闲聊，子问题一律走 QA——无需再路由。拆完直接包成路由计划进 qa_branch。
         clean_query = await ctx.store.get("clean_query")
-        book_titles = await ctx.store.get("book_titles")
-        subs = await self.front_door.split_query(clean_query, book_titles)
-        await ctx.store.set("sub_queries", subs)
-        return RouteEvent()
-
-    @step
-    async def route(
-        self, ctx: Context, ev: RouteEvent
-    ) -> "QaEvent | DirectReplyEvent":
-        sub_texts = await ctx.store.get("sub_queries")     # split_query 存的 list[str]
-
-        rr = await self.front_door.route(sub_texts)    # _RouteResultModel
-        routes = rr.routes
-
-        # 聚合：任一 dispatch_qa → QA；否则全 converse。clean_query 是门口横切产物，绝不写会话记忆。
-        if any(r.action == "dispatch_qa" for r in routes):
-            # 非 qa 子问题降为 converse 装饰（reply 留空，由合成 agent 现写）
-            subs = [
-                RoutedSubQuery(r.query, "dispatch_qa") if r.action == "dispatch_qa"
-                else RoutedSubQuery(r.query, "converse")
-                for r in routes
-            ]
-            await ctx.store.set("action", "dispatch_qa")
-            await ctx.store.set("sub_queries", subs)       # 覆写成 list[RoutedSubQuery]
-            return QaEvent()
-
-        # 全 converse —— reply 留空，由合成 agent 现写
-        await ctx.store.set("action", "converse")
-        return DirectReplyEvent(reply="", action="converse")
+        subs = await self.front_door.split_query(clean_query)
+        routed = [RoutedSubQuery(q, "dispatch_qa") for q in subs if q and q.strip()]
+        await ctx.store.set("action", "dispatch_qa")
+        await ctx.store.set("sub_queries", routed)         # list[RoutedSubQuery]
+        return QaEvent()
 
     # ── 分支：dispatch 到 QA capability（薄委托），各分支统一收成 FinalizeEvent ──
     @step
@@ -220,8 +195,7 @@ class DocQueryWorkflow(Workflow):
     @step
     async def qa_branch(self, ctx: Context, ev: QaEvent) -> CombineEvent:
         # dispatch_qa：并发跑 workers（不外流 token）产材料 → 交统一合成 agent。
-        # 进并发预合成阶段，先发 ThinkingStartEvent（前端起 spinner + 计时）。
-        ctx.write_event_to_stream(ThinkingStartEvent())
+        # ThinkingStartEvent 已在 start step 提前发出（覆盖 clean/split 等待）。
         sub_queries = await ctx.store.get("sub_queries")
         book_titles = await ctx.store.get("book_titles")
         disable_scope = await ctx.store.get("disable_scope", False)
@@ -237,7 +211,7 @@ class DocQueryWorkflow(Workflow):
     async def combine(self, ctx: Context, ev: CombineEvent) -> FinalizeEvent:
         # 统一出口：原始问题 + 会话历史（只读）+ 材料 → 流式合成最终回复。
         original = await ctx.store.get("original_query")
-        memory: Optional[ChatMemoryBuffer] = await ctx.store.get("memory")
+        memory: ChatMemoryBuffer | None = await ctx.store.get("memory")
         history = format_history(memory)
         materials = await ctx.store.get("materials")
         nodes = await ctx.store.get("combine_nodes", [])
@@ -247,7 +221,7 @@ class DocQueryWorkflow(Workflow):
     # ── 收尾：唯一写「会话记忆」的地方 = 原始问题 + 最终答案 ──────────
     @step
     async def finalize(self, ctx: Context, ev: FinalizeEvent) -> StopEvent:
-        memory: Optional[ChatMemoryBuffer] = await ctx.store.get("memory")
+        memory: ChatMemoryBuffer | None = await ctx.store.get("memory")
         original = await ctx.store.get("original_query")
         if memory is not None:
             # 存【用户原话】，不存改写版：保真，且下轮消指代不被机器措辞带偏

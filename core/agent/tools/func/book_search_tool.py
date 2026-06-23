@@ -1,8 +1,7 @@
-from typing import Optional
 
 from llama_index.core.tools import FunctionTool
 
-from core.agent.tools import register_tool, ToolContext
+from core.agent.tools import ToolContext, register_tool
 
 
 def _unwrap(n):
@@ -50,7 +49,7 @@ class BookSearchTool:
     def __init__(self, ctx: ToolContext):
         self.ctx = ctx
 
-    async def __call__(self, query: str, book: Optional[str] = None) -> str:
+    async def __call__(self, query: str, book: str | None = None) -> str:
         if not isinstance(query, str):
             query = str(query)
         query = query.strip()

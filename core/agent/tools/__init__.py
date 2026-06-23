@@ -6,6 +6,7 @@ from core.agent.tools.book_tools import (
     build_book_tools,
     register_tool,
 )
+
 # 导入 func 子包触发各工具的 @register_tool 落表（须在 register_tool 定义之后）。
 from core.agent.tools.func import BookSearchTool, ListBooksTool
 

@@ -7,7 +7,6 @@
 解析失败 / 空 -> 返回空列表，由调用方（assume）降级为单轮检索，绝不阻塞。
 """
 import logging
-from typing import List
 
 from llama_index.core.bridge.pydantic import BaseModel, Field
 from llama_index.core.llms import LLM
@@ -41,7 +40,7 @@ class Dimension(BaseModel):
 class DimensionSet(BaseModel):
     """LLM 归纳结果的目标 schema（代码侧 Pydantic 校验）。"""
 
-    dimensions: List[Dimension] = Field(default_factory=list)
+    dimensions: list[Dimension] = Field(default_factory=list)
 
 
 def _strip_fences(text: str) -> str:
@@ -62,9 +61,9 @@ class DimensionExtractor:
     async def run(
         self,
         clean_query: str,
-        passages: List[str],
+        passages: list[str],
         max_items: int = 6,
-    ) -> List[Dimension]:
+    ) -> list[Dimension]:
         prompt = (
             _DIMENSION_PROMPT.replace("{query}", clean_query)
             .replace("{passages}", "\n---\n".join(passages) or "（无）")

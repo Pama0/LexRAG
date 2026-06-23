@@ -1,8 +1,8 @@
 import os
 
 from dotenv import load_dotenv
-from llama_index.llms.openai_like import OpenAILike
 from llama_index.core import Settings
+from llama_index.llms.openai_like import OpenAILike
 
 from configs.usage_logging import install_usage_logging
 

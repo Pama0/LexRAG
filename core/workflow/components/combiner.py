@@ -8,7 +8,7 @@ import logging
 from llama_index.core.llms import LLM
 
 from core.prompts.template import load_prompt
-from core.workflow.qa_capability import AnswerDeltaEvent, Material, REFUSAL_TEXT
+from core.workflow.qa_capability import REFUSAL_TEXT, AnswerDeltaEvent, Material
 
 logger = logging.getLogger(__name__)
 

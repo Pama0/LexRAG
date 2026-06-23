@@ -40,6 +40,10 @@
               </div>
             </div>
           </div>
+          <div
+            v-if="msg.role === 'assistant' && msg.thinking && !msg.content && !(msg.steps && msg.steps.length)"
+            class="typing"
+          >正在思考<span class="typing-dots"></span></div>
           <div class="msg-content">{{ msg.content }}</div>
           <div v-if="msg.sources && msg.sources.length" class="sources-inline">
             <SourceCard
@@ -84,6 +88,7 @@ interface Message {
   sources?: Source[]
   steps?: AgentStep[]
   stepsExpanded?: boolean // 思考过程是否展开（生成中自动展开，结束后收起）
+  thinking?: boolean // 收到问题后到首个输出前的"思考中"动画
 }
 
 const props = defineProps<{ sessionId: string | null }>()
@@ -170,7 +175,7 @@ async function send() {
 
   // 占位 assistant 消息：push 后必须从数组取响应式 proxy 引用，
   // 直接修改原始对象不会触发 Vue 响应式更新（这是 ref 的常见陷阱）
-  messages.value.push({ role: 'assistant', content: '', steps: [], sources: [], stepsExpanded: true })
+  messages.value.push({ role: 'assistant', content: '', steps: [], sources: [], stepsExpanded: true, thinking: true })
   const assistantMsg = messages.value[messages.value.length - 1]
   // 流式状态：
   // - inAnswer：是否已进入"最终答案"阶段（最近一次 tool_result 之后）
@@ -224,6 +229,7 @@ async function send() {
     assistantMsg.content = `错误: ${e.message || e}`
   } finally {
     loading.value = false
+    assistantMsg.thinking = false // 兜底：流结束必停"思考中"动画
     assistantMsg.stepsExpanded = false // 生成结束：收起思考过程，突出最终答案
     // 流结束后清掉自建会话标记：它只用于拦截本轮流式中的那一次 watch 重载；
     // 留着会让之后"切走再切回同一会话"被误判而跳过历史重载。
@@ -254,6 +260,11 @@ function handleEvent(
   state: { inAnswer: boolean; hasToolCall: boolean; thinkingIdx: number },
 ) {
   switch (payload.type) {
+    case 'thinking': {
+      // workflow 收到问题，进入预处理/检索/合成前的等待 → 显示"思考中"动画
+      msg.thinking = true
+      break
+    }
     case 'session': {
       // 后端确认/创建了 session_id，通知父组件同步。
       // 先打标记：这是本轮自建会话，父组件回填导致的 props.sessionId 变化不应触发历史重载。
@@ -264,6 +275,7 @@ function handleEvent(
       break
     }
     case 'tool_call': {
+      msg.thinking = false // 已有可见进度（步骤），停掉"思考中"动画
       // 若上一轮 tool_result 后又冒出文字（轮次间思考），它已落进 content，
       // 这里把它移到思考步骤，保证 content 最终只剩最后一轮的答案。
       if (msg.content) {
@@ -278,6 +290,7 @@ function handleEvent(
       break
     }
     case 'tool_result': {
+      msg.thinking = false
       msg.steps?.push({ icon: '📄', text: `工具返回（节选）：${payload.preview?.slice(0, 80) || ''}` })
       // 工具返回后接下来的 delta 视为最终答案阶段
       state.inAnswer = true
@@ -286,6 +299,7 @@ function handleEvent(
       break
     }
     case 'delta': {
+      msg.thinking = false // 开始有输出（答案或思考步骤），停掉"思考中"动画
       // 答案阶段 → 流入 content；否则（工具前/轮次间）→ 累积到思考步骤
       if (state.inAnswer) {
         msg.content += payload.data || ''
@@ -299,6 +313,7 @@ function handleEvent(
       break
     }
     case 'answer': {
+      msg.thinking = false
       // 纯对话（全程无工具调用）：思考步骤里就是答案本身，去掉避免重复显示
       if (!state.hasToolCall) msg.steps = []
       // 兜底：最终一次性覆盖（防止 delta 累积有问题）
@@ -511,6 +526,19 @@ function scrollToBottom() {
   color: #999;
   font-style: italic;
   padding: 10px 16px;
+}
+
+.typing-dots::after {
+  content: '';
+  animation: typing-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes typing-dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+  100% { content: ''; }
 }
 
 .input-area {

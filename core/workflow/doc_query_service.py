@@ -9,7 +9,6 @@
 - build_memory 鸭子类型读 .role/.content，不反向依赖 persistence 层。
 """
 import asyncio
-from typing import List, Optional
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.llms import LLM
@@ -35,7 +34,7 @@ class DocQueryService:
         self.timeout = timeout
         self._locks: dict[str, asyncio.Lock] = {}
 
-    def get_lock(self, session_id: Optional[str]) -> asyncio.Lock:
+    def get_lock(self, session_id: str | None) -> asyncio.Lock:
         """获取 session 锁；session_id 为空返回一次性锁。"""
         if not session_id:
             return asyncio.Lock()
@@ -45,7 +44,7 @@ class DocQueryService:
             self._locks[session_id] = lock
         return lock
 
-    def build_memory(self, db_messages, summary: Optional[str] = None) -> ChatMemoryBuffer:
+    def build_memory(self, db_messages, summary: str | None = None) -> ChatMemoryBuffer:
         """根据数据库历史消息构造 ChatMemoryBuffer（鸭子类型读 .role / .content）。
 
         summary 非空时，前置一条带 SUMMARY_MARKER 的消息承载被压缩掉的远期上下文；
@@ -72,8 +71,8 @@ class DocQueryService:
     def run_handler(
         self,
         query: str,
-        memory: Optional[ChatMemoryBuffer],
-        book_titles: Optional[List[str]] = None,
+        memory: ChatMemoryBuffer | None,
+        book_titles: list[str] | None = None,
         allow_clarify: bool = True,
     ):
         """起一个 workflow run，返回 WorkflowHandler（可 await，可 stream_events）。"""
@@ -82,6 +81,7 @@ class DocQueryService:
             llm=self.llm,
             similarity_top_k=self.similarity_top_k,
             timeout=self.timeout,
+            retriever="hybrid",
         )
         return workflow.run(
             query=query,
@@ -93,8 +93,8 @@ class DocQueryService:
     async def ask(
         self,
         query: str,
-        memory: Optional[ChatMemoryBuffer],
-        book_titles: Optional[List[str]] = None,
+        memory: ChatMemoryBuffer | None,
+        book_titles: list[str] | None = None,
     ) -> str:
         """单轮提问（CLI / 简单调用用）：跑完返回最终答案文本。"""
         result = await self.run_handler(query, memory, book_titles)

@@ -7,16 +7,16 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from configs.llm import configure_llm
-from configs.embedding import configure_embedding
-from core.rag.data_loader import RAGIndexManager
-from core.workflow.doc_query_service import DocQueryService
-from core.persistence.db import init_db
 from api.routers.chat import create_chat_router
 from api.routers.documents import create_documents_router
 from api.routers.sessions import create_sessions_router
+from configs.embedding import configure_embedding
+from configs.llm import configure_llm
+from core.persistence.db import init_db
+from core.rag.data_loader import RAGIndexManager
+from core.workflow.doc_query_service import DocQueryService
 
-# 项目根目录（api/main.py 的上一级），用于拼接绝对路径
+# 项目根目录（api/chat.py 的上一级），用于拼接绝对路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHROMA_DIR = os.path.join(PROJECT_ROOT, "chroma_db")
 LOG_DIR = os.path.join(PROJECT_ROOT, "logs")

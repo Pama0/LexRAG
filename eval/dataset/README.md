@@ -1,5 +1,17 @@
 # 评测测试集说明
 
+> **更新（2026-06-23）— eval 收敛为两路线**
+> eval 现只比 **workflow vs agent** 两条路线，指标 = 5 ragas 质量 + 成本（时延/tokens），
+> **分类准确率指标已删**。因此：
+> - `category` 字段不再驱动任何指标，仅剩两个仍有功能的取值 **`missing_info`/`out_of_scope`** ——
+>   它们命中 `score_row` 的 REFUSE 闸门、跳过 ragas（拒答题打分无意义）。其余 category 标签现为
+>   纯信息性（决定 `fill_reference` 生成 reference 的形态）。
+> - 拒答类（missing_info/out_of_scope）因无对应指标，已从 `golden.jsonl` 移出、归档到
+>   **`golden.refusal.jsonl`**（保留手工标注，未销毁；如将来恢复拒答衡量可取回）。
+> - `golden.jsonl` 当前 = 22 条可答题（retrievable/ambiguous/pending_split/other），
+>   其中新增 7 条「对比/综合/多跳」题强化两路线差异、并补上 openclaw 此前的零覆盖。
+> 下文 category 准则仍是 `fill_reference` 形态映射的依据，照旧有效。
+
 ## 文件
 
 - `golden.seed.jsonl` — 金标准**种子**（示范格式；核心只需 `user_input`/`category`/`scope`，reference 占位可留空）。

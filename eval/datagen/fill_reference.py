@@ -25,7 +25,7 @@ from configs.embedding import configure_embedding
 from configs.llm import configure_llm, deepseek_api_key
 from core.rag.data_loader import RAGIndexManager
 from core.workflow.qa_capability import QaCapability
-from eval.config import DATASET_DIR, CHROMA_DIR
+from eval.config import CHROMA_DIR, DATASET_DIR
 
 GOLDEN = os.path.join(DATASET_DIR, "golden.jsonl")
 OUT = os.path.join(DATASET_DIR, "golden.with_ref.jsonl")
@@ -83,6 +83,7 @@ async def main():
 
     print(f"[补 reference] {len(rows)} 条，慷慨检索 K={REF_K}……\n")
     for r in rows:
+        if r.get("reference"): continue
         cat = r.get("category", "")
         if cat in ("missing_info", "out_of_scope"):
             r["reference"] = ""

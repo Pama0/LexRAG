@@ -8,7 +8,7 @@ import asyncio
 import csv
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from configs.embedding import configure_embedding
 from core.rag.data_loader import RAGIndexManager
@@ -25,7 +25,7 @@ from eval.retrieval.metrics import (
 
 RESULT_CSV = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "results",
-    f"retrieval_eval_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.csv"
+    f"retrieval_eval_{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}.csv"
 )
 
 
@@ -108,7 +108,7 @@ def _render_table(results: list[tuple[str, dict]], sample_count: int) -> str:
     if len(results) > 1:
         total = aggregate([agg for _, agg in results])
         cells = [f"{total.get(c):.3f}" if total.get(c) is not None else "—" for c in cols]
-        lines.append(f"| **总计** | " + " | ".join(cells) + " |")
+        lines.append("| **总计** | " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 

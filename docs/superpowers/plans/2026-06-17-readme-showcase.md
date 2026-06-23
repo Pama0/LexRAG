@@ -176,8 +176,8 @@ Expected: 两个文件中这两行的数值逐字一致（baseline 行 `0.70 | 0
 
 Run:
 ```bash
-grep -E 'python main.py|uvicorn api.main:app' CLAUDE.md
-grep -E 'python main.py|uvicorn api.main:app' README.md
+grep -E 'python chat.py|uvicorn api.main:app' CLAUDE.md
+grep -E 'python chat.py|uvicorn api.main:app' README.md
 ```
 Expected: 两文件都含 `python main.py` 与 `python -m uvicorn api.main:app --port 8000`。
 

@@ -16,10 +16,10 @@ start → clean_question → split_query → route ─┬─ qa_branch          
                                               └─ study_plan_branch   → finalize
 ```
 
-- **门口 `FrontDoor`**（`components/new_front_door.py`）：三步各一次独立 LLM 调用、各自降级——
+- **门口 `FrontDoor`**（`components/front_door.py`）：三步各一次独立 LLM 调用、各自降级——
   1. `clean`：读会话记忆消指代 + 规范化 → `clean_query`；指代无法消解则标 `is_missing_info`，直接反问。
-  2. `split_query`：把 `clean_query` 拆成若干互不相同的子问题（`FunctionAgent` + `probe` 工具，
-     存疑挂法先探库再决定拆不拆）。
+  2. `split_query`：把 `clean_query` 拆成若干互不相同的子问题（单次 `json_object` LLM 调用，凭模型
+     自身知识判居中句式歧义；query 以数据分隔符喂入做反注入，失败/空/输出漂移一律降级不拆）。
   3. `route`：给【每个】子问题判一个出口——dispatch_qa / study_plan / converse / clarify。
 - **`QaCapability`**（`qa_capability.py`）：消费门口路由计划（`list[RoutedSubQuery]`）。每个 QA 子问题
   并行判定（`_decide_subq`：probe → `Admitter` 判 ok/missing_info/out_of_scope 并算 per-subq scope →
@@ -27,8 +27,8 @@ start → clean_question → split_query → route ─┬─ qa_branch          
   converse 子问题直接装饰、不检索。单子问题退化为旧单路径（无分节标题）。
 - **`DocQueryService`**（`doc_query_service.py`）：装配层，按名解析可插拔检索组件，每请求新建 workflow。
 
-> 历史：老门口 `FrontDoorAgent`（`front_door.py`）已被 `FrontDoor` 取代并删除；其 `RoutedSubQuery`
-> 契约类已迁入 `components/new_front_door.py`。
+> 历史：老门口 `FrontDoorAgent` 已被 `FrontDoor` 取代并删除；其 `RoutedSubQuery`
+> 契约类已迁入 `components/front_door.py`。
 
 ## 两层记忆纪律（关键，别混成一锅）
 

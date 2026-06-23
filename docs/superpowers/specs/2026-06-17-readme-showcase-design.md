@@ -59,7 +59,7 @@
 pip install -r requirements.txt
 # .env 配置 DEEPSEEK_API_KEY（主系统 + 评测 judge 共用）
 
-python main.py                                   # CLI 对话
+python chat.py                                   # CLI 对话
 python -m uvicorn api.main:app --port 8000       # Web 服务
 
 # 评测（需 DEEPSEEK_API_KEY）

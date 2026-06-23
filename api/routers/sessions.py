@@ -1,9 +1,6 @@
 """会话管理路由：CRUD + 历史消息"""
 from fastapi import APIRouter, HTTPException
 
-from core.persistence import repositories as repo
-from core.workflow.doc_query_service import DocQueryService
-from core.persistence.db import get_session
 from api.schemas import (
     CreateSessionRequest,
     MessageItem,
@@ -13,6 +10,9 @@ from api.schemas import (
     SessionListResponse,
     SourceRef,
 )
+from core.persistence import repositories as repo
+from core.persistence.db import get_session
+from core.workflow.doc_query_service import DocQueryService
 
 
 def create_sessions_router(query_service: DocQueryService) -> APIRouter:

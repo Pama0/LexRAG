@@ -1,7 +1,7 @@
 import logging
 
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.core import Settings
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 logger = logging.getLogger(__name__)
 #初始化一个HuggingFaceEmbedding对象，用于将文本转换为向量表示

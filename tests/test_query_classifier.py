@@ -5,7 +5,7 @@
 """
 import pytest
 
-from core.workflow.query_classifier import QueryClassifier, ClassifyResult
+from core.workflow.query_classifier import ClassifyResult, QueryClassifier
 
 
 class _Resp:

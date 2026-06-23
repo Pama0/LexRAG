@@ -6,14 +6,12 @@
 - 保留交互式 CLI chat() 便捷入口
 """
 import asyncio
-from typing import List, Optional
 
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from llama_index.core.llms import LLM
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import FunctionTool
-
 
 BOOK_SYSTEM_PROMPT = """
 你是一个书籍，文档知识库助手，帮助用户从已入库的技术书籍中查找答案。
@@ -47,7 +45,7 @@ class BookAgent:
 
     def __init__(
         self,
-        tools: List[FunctionTool],
+        tools: list[FunctionTool],
         llm: LLM,
         system_prompt: str = BOOK_SYSTEM_PROMPT,
         memory_token_limit: int = 4000,
@@ -67,7 +65,7 @@ class BookAgent:
         )
         self._locks: dict[str, asyncio.Lock] = {}
 
-    def get_lock(self, session_id: Optional[str]) -> asyncio.Lock:
+    def get_lock(self, session_id: str | None) -> asyncio.Lock:
         """获取 session 锁；session_id 为空返回一次性锁"""
         if not session_id:
             return asyncio.Lock()

@@ -1,19 +1,19 @@
+
 from pydantic import BaseModel
-from typing import List, Optional
 
 from core.agent.source_context import SourceRef  # 领域值对象，re-export 供 DTO 使用
 
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: Optional[str] = None  # 会话 ID，区分独立的对话上下文
-    book_titles: Optional[List[str]] = None  # 用户手动选定的查询范围（硬约束，多选）；空则全库
+    session_id: str | None = None  # 会话 ID，区分独立的对话上下文
+    book_titles: list[str] | None = None  # 用户手动选定的查询范围（硬约束，多选）；空则全库
     top_k: int = 3
 
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: List[SourceRef] = []
+    sources: list[SourceRef] = []
 
 
 class DocumentUploadResponse(BaseModel):
@@ -33,7 +33,7 @@ class DocumentInfo(BaseModel):
 
 
 class DocumentListResponse(BaseModel):
-    books: List[DocumentInfo] = []
+    books: list[DocumentInfo] = []
     total_vectors: int = 0
 
 
@@ -48,11 +48,11 @@ class SessionInfo(BaseModel):
 
 
 class SessionListResponse(BaseModel):
-    sessions: List[SessionInfo] = []
+    sessions: list[SessionInfo] = []
 
 
 class CreateSessionRequest(BaseModel):
-    title: Optional[str] = None
+    title: str | None = None
 
 
 class RenameSessionRequest(BaseModel):
@@ -63,10 +63,10 @@ class MessageItem(BaseModel):
     id: int
     role: str
     content: str
-    sources: List[SourceRef] = []
+    sources: list[SourceRef] = []
     created_at: str
 
 
 class MessageListResponse(BaseModel):
     session_id: str
-    messages: List[MessageItem] = []
+    messages: list[MessageItem] = []

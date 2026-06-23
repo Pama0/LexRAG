@@ -5,10 +5,10 @@ import tempfile
 from datetime import datetime
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from api.schemas import DocumentUploadResponse, DocumentInfo, DocumentListResponse
+from api.schemas import DocumentInfo, DocumentListResponse, DocumentUploadResponse
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 UPLOAD_DIR = os.path.join(PROJECT_ROOT, "data", "books")

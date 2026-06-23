@@ -1,30 +1,26 @@
-"""决策对比 runner：对变体列表跑同一测试集，渲染 baseline vs 变体的 delta 表。
+"""路线对比 runner：对若干 SUT 路线跑同一测试集，渲染 baseline vs 各路线的 delta 表。
 
-变体 = 一组决策 flag。两个布尔轴：probe_then_classify（probe 探测召回再判类 on-off）+
-other_agent_enabled（有界 agent on-off，门控 qa.answer 内 complex/simple 升级/explain
-EmptySkeleton 兜底）。旧的 split/assume 开关在新 qa.answer 编排里无对应分支已删除。
-baseline 通常全单轮、无 agent，逐个打开决策，对比表每行一个变体、delta 列即
-"该决策带来多少提升"。
+三条路线：naive_rag（朴素 RAG 对照组）/ workflow（生产编排）/ agent（自主规划）。
+默认 baseline = naive_rag，delta 列即各路线相对朴素 RAG 的质量/成本差。
+指标 = 5 ragas 质量 + 成本（时延/tokens，串行模式逐行计 token）。
 """
-# agent vs 全开（delta 相对全开）python -m eval.harness.compare --testset eval/dataset/golden.jsonl --variants "全开" "agent(自主规划)"
+# 只比朴素 RAG 与 workflow：python -m eval.harness.compare --testset eval/dataset/golden.jsonl --variants workflow naive_rag
 import argparse
 import asyncio
+import json
 import os
 import sys
 import time
+from time import perf_counter
 
+from eval.harness.metrics import METRIC_NAMES, MetricSpec  # noqa: F401
 from eval.harness.report import (
     default_result_paths,
     render_delta_table,
     write_detail_csv,
+    write_detail_csv_per_variant,
 )
-
-import json
-from time import perf_counter
-
-from eval.harness.metrics import METRIC_NAMES, MetricSpec  # noqa: F401
 from eval.harness.sut import RagOutput
-
 
 # 「拒答类」金标准：正确行为是反问澄清 / 告知库外，而非给出可被 ragas 打分的答案。
 # 按金标准 expected_category 把这两类的指标归 null（对所有被测系统一致），避免污染质量均值。
@@ -111,25 +107,29 @@ def aggregate(rows: list[dict]) -> dict:
     }
 
 
-# 两条 SUT 路线：workflow（默认 flags = DocQueryService 生产配置）vs agent（自主规划）。
-# workflow 用空 flags dict（= 默认）；agent 用 None 作哨兵，build_sut 据此分流到 AgentSystem。
+# 三条 SUT 路线：naive_rag（朴素 RAG 对照组，默认 baseline）/ workflow（生产编排）/ agent（自主规划）。
+# VARIANTS 仅作「可选路线名」登记表（值不再有语义，build_sut 按名分流）；
+# 顺序即对比表行序，naive_rag 居首作 delta 锚。
 WORKFLOW_VARIANT = "workflow"
+NAIVE_VARIANT = "naive_rag"
 AGENT_VARIANT = "agent"
 VARIANTS = {
+    NAIVE_VARIANT: None,
     WORKFLOW_VARIANT: {},
     AGENT_VARIANT: None,
 }
 
 
 def build_sut(name: str, index_manager, llm):
-    """按路线名构造被测系统：哨兵(None) → AgentSystem，否则 DocQueryWorkflowSystem(默认 flags)。"""
-    from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem
-    if name not in VARIANTS:
-        raise KeyError(name)
-    flags = VARIANTS[name]
-    if flags is None:
+    """按路线名构造被测系统：workflow / naive_rag / agent 三选一。"""
+    from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem, NaiveRagSystem
+    if name == WORKFLOW_VARIANT:
+        return DocQueryWorkflowSystem(index_manager, llm)
+    if name == NAIVE_VARIANT:
+        return NaiveRagSystem(index_manager, llm)
+    if name == AGENT_VARIANT:
         return AgentSystem(index_manager, llm)
-    return DocQueryWorkflowSystem(index_manager, llm, flags=flags)
+    raise KeyError(name)
 
 
 def resolve_baseline(baseline: str, variant_names: list[str]) -> str:
@@ -138,13 +138,13 @@ def resolve_baseline(baseline: str, variant_names: list[str]) -> str:
 
 
 async def _run_variants(testset_path, limit, names, concurrency: int = 1):
-    from eval.config import CHROMA_DIR, make_eval_embeddings, make_eval_llm
-    from eval.harness.metrics import build_metric_specs
-    from eval.harness.meter import attach_token_meter
     # load_testset/score_row/aggregate 已是本模块局部函数
     from configs.embedding import configure_embedding
     from configs.llm import configure_llm
     from core.rag.data_loader import RAGIndexManager
+    from eval.config import CHROMA_DIR, make_eval_embeddings, make_eval_llm
+    from eval.harness.meter import attach_token_meter
+    from eval.harness.metrics import build_metric_specs
 
     rows = load_testset(testset_path)
     if limit:
@@ -233,8 +233,8 @@ def main():
                    default=list(VARIANTS),
                    choices=list(VARIANTS.keys()),
                    help=f"路线子集，可选：{list(VARIANTS.keys())}（默认两条都跑）")
-    p.add_argument("--baseline", default=WORKFLOW_VARIANT,
-                   help="作为 delta 基准的路线名（默认 workflow，delta 列即 agent 相对 workflow）")
+    p.add_argument("--baseline", default=NAIVE_VARIANT,
+                   help="作为 delta 基准的路线名（默认 naive_rag，delta 列即各路线相对朴素 RAG 的差）")
     p.add_argument("--out", default=None,
                    help="对比表 Markdown 落盘路径；缺省 eval/results/compare_<时间戳>.md")
     p.add_argument("--detail", default=None,
@@ -261,6 +261,12 @@ def main():
 
     write_detail_csv(detail, detail_path)
     print(f"[已存明细] {detail_path}（共 {len(detail)} 行 = 条数 × 变体数）")
+
+    # 再按路线各拆一份单独明细 CSV，便于单独查看某条路线
+    per_variant = write_detail_csv_per_variant(detail, detail_path)
+    for variant, path in per_variant.items():
+        n = sum(1 for d in detail if d.get("variant") == variant)
+        print(f"[已存明细·{variant}] {path}（{n} 行）")
 
 
 if __name__ == "__main__":

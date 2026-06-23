@@ -2,8 +2,8 @@
 
 字段映射与指标构造分离——映射可离线单测，构造需真实 InstructorLLM（集成 smoke）。
 """
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 
 # ── 字段映射：row(dict) + RagOutput → ascore kwargs ──
@@ -55,8 +55,8 @@ def build_metric_specs(llm, embeddings) -> list[MetricSpec]:
         AnswerRelevancy,
         ContextPrecisionWithReference,
         ContextRecall,
-        Faithfulness,
         FactualCorrectness,
+        Faithfulness,
     )
 
     return [

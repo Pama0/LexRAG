@@ -7,7 +7,6 @@ contextvar 默认 task-local，子任务自动继承。
 SourceRef 作为领域值对象定义在此，api 层从这里导入用于响应 DTO。
 """
 from contextvars import ContextVar
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -19,7 +18,7 @@ class SourceRef(BaseModel):
     excerpt: str  # 引用片段
 
 
-_current_sources: ContextVar[Optional[list]] = ContextVar(
+_current_sources: ContextVar[list | None] = ContextVar(
     "current_sources", default=None
 )
 
@@ -28,11 +27,11 @@ CLARIFY_MAX = 1  # 每个用户回合最多澄清次数，防止 Agent↔workflo
 # 用单元素 list 作共享可变容器（而非 int）：consume_clarify 在工具子任务里调用，
 # 必须靠"原地改对象"跨 context 传播；若 .set() 重新绑定 int 则不回流父/兄弟任务。
 # 与 _current_sources 用 extend 同理。
-_clarify_budget: ContextVar[Optional[list]] = ContextVar("clarify_budget", default=None)
+_clarify_budget: ContextVar[list | None] = ContextVar("clarify_budget", default=None)
 
 # 请求级查询范围：用户手动选择的书名列表（硬约束，是唯一的书籍过滤来源）。
 # None / 空 表示全库；Agent 不再自行指定书名。
-_scope_books: ContextVar[Optional[list]] = ContextVar("scope_books", default=None)
+_scope_books: ContextVar[list | None] = ContextVar("scope_books", default=None)
 
 
 def begin_collection() -> None:
@@ -42,12 +41,12 @@ def begin_collection() -> None:
     _scope_books.set(None)  # 由 handler 随后 set_scope 显式注入
 
 
-def set_scope(books: Optional[list]) -> None:
+def set_scope(books: list | None) -> None:
     """请求级：写入用户手动选择的查询范围。空/None 视为全库。"""
     _scope_books.set(list(books) if books else None)
 
 
-def get_scope() -> Optional[list]:
+def get_scope() -> list | None:
     """读取当前请求的用户选定查询范围；None 表示未选（全库）。"""
     return _scope_books.get()
 

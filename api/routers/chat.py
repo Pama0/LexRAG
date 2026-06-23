@@ -1,21 +1,15 @@
 """Chat 路由：所有问答走 Agent 模式，历史用 SQLite 持久化"""
 import json
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from core.persistence import repositories as repo
-from core.workflow.doc_query_service import DocQueryService
-from core.workflow.doc_workflow import (
-    AnswerDeltaEvent,
-    RetrievalDoneEvent,
-    RetrievalStartEvent,
-)
-from core.persistence.db import get_session
 from api.schemas import ChatRequest, ChatResponse, SourceRef
 from core.agent.source_context import node_to_source_ref
+from core.persistence import repositories as repo
+from core.persistence.db import get_session
+from core.workflow.doc_query_service import DocQueryService
 from core.workflow.summarizer import (
     SUMMARY_KEEP_LAST_MSGS,
     SUMMARY_TRIGGER_MSGS,
@@ -26,7 +20,7 @@ from core.workflow.summarizer import (
 logger = logging.getLogger(__name__)
 
 
-async def _ensure_session(session_id: Optional[str]) -> str:
+async def _ensure_session(session_id: str | None) -> str:
     """确保 session 存在：传入 None 或不存在的 id 都自动创建一个新会话，返回最终 id"""
     async with get_session() as db:
         if session_id:

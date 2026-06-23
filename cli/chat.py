@@ -1,7 +1,7 @@
 """book 知识库助手 CLI 入口。
 
 组装 core 组件 + book 工具 + 主 agent，进入交互式对话。
-（Web 服务入口见 api/main.py：python -m uvicorn api.main:app）
+（Web 服务入口见 api/chat.py：python -m uvicorn api.main:app）
 """
 import asyncio
 import logging
@@ -19,7 +19,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 load_dotenv()
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-CHROMA_DIR = os.path.join(PROJECT_ROOT, "chroma_db")
+CHROMA_DIR = os.path.join(PROJECT_ROOT, "../chroma_db")
 
 
 async def run() -> None:

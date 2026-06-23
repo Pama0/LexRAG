@@ -1,6 +1,6 @@
 from llama_index.core.tools import FunctionTool
 
-from core.agent.tools import register_tool, ToolContext
+from core.agent.tools import ToolContext, register_tool
 from core.rag.inventory import list_books_text
 
 

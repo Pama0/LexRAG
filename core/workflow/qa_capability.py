@@ -24,7 +24,6 @@ probe → admit → classify，同时算 scope）→ 按路由计划顺序执行
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from llama_index.core import get_response_synthesizer
 from llama_index.core.llms import LLM
@@ -33,11 +32,11 @@ from llama_index.core.workflow import Context, Event
 from core.retrieval.rerank import Reranker
 from core.retrieval.retrieve import Retriever, VectorRetriever
 from core.workflow.admitter import Admitter, AdmitVerdict
+from core.workflow.answer_outliner import AnswerOutliner
 from core.workflow.chapter_tree import children, dominant_prefix, unique_chapters
 from core.workflow.query_classifier import QueryClassifier
 from core.workflow.query_decompose import QueryDecomposer
 from core.workflow.query_dimension import DimensionExtractor
-from core.workflow.answer_outliner import AnswerOutliner
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +123,7 @@ class _SubDecision:
     category: str = ""           # explain/compare/simple/complex（仅 ok）
     reason: str = ""
     clarify_question: str = ""
-    scope: Optional[list[str]] = None
+    scope: list[str] | None = None
 
 
 @dataclass
@@ -208,7 +207,7 @@ class QaCapability:
         self.qa_agent = None
 
     async def _decide_subq(
-        self, q: str, book_titles: Optional[list[str]],
+        self, q: str, book_titles: list[str] | None,
         probe: bool = True, disable_scope: bool = False,
     ) -> "_SubDecision":
         """单子问题判定：probe → admit（非 ok 短路，同时拿 scope）→ classify。失败一律放行/降级。"""
@@ -246,7 +245,7 @@ class QaCapability:
         return top < self.simple_escalate_min_score
 
     async def _execute_subq(
-        self, ctx: Context, q: str, category: str, scope: Optional[list[str]]
+        self, ctx: Context, q: str, category: str, scope: list[str] | None
     ) -> tuple[str, list]:
         """按 category 分派执行；在该子问题 scope 内检索。
 
@@ -292,7 +291,7 @@ class QaCapability:
         self,
         ctx: Context,
         sub_queries: list,                 # list[RoutedSubQuery]
-        book_titles: Optional[list[str]],
+        book_titles: list[str] | None,
         probe: bool = True,
         disable_scope: bool = False,
     ) -> tuple[list["Material"], list, dict]:
@@ -371,9 +370,9 @@ class QaCapability:
         self,
         ctx: Context,
         query: str,
-        book_titles: Optional[list[str]],
+        book_titles: list[str] | None,
         preamble: str = "",
-        nodes: Optional[list] = None,
+        nodes: list | None = None,
     ) -> tuple[str, list]:
         """直接检索 + 流式合成（绕开 agent/工具）。返回 (答案文本, source_nodes)。
 
@@ -396,7 +395,7 @@ class QaCapability:
         return (preamble + answer if preamble else answer), nodes
 
     async def assume(
-        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+        self, ctx: Context, query: str, book_titles: list[str] | None
     ) -> tuple[str, list]:
         """角度不定：定位 → LLM 归纳评判维度 → 声明所选角度 → 逐维度检索分节合成。
 
@@ -435,7 +434,7 @@ class QaCapability:
         return await self._retrieve_and_concat(ctx, sections, book_titles, preamble)
 
     async def explain(
-        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+        self, ctx: Context, query: str, book_titles: list[str] | None
     ) -> tuple[str, list]:
         """讲清楚：宽覆盖召回 → 教学维度教案(吃 TOC) → 每维度检索 → 合并截断 → 一次整合教学写作。
 
@@ -487,7 +486,7 @@ class QaCapability:
         return answer, pool
 
     async def split(
-        self, ctx: Context, query: str, book_titles: Optional[list[str]]
+        self, ctx: Context, query: str, book_titles: list[str] | None
     ) -> tuple[str, list]:
         """定位 → 建骨架(结构主+内容辅) → 逐项检索 → map-reduce 汇总。
 
@@ -557,7 +556,7 @@ class QaCapability:
         ctx: Context,
         original_query: str,
         sub_queries: list[str],
-        book_titles: Optional[list[str]],
+        book_titles: list[str] | None,
     ) -> tuple[str, list]:
         """synthesize 模式：扇出检索（并发）→ 去重合并 → 对原始问题一次整合合成。
 
@@ -584,7 +583,7 @@ class QaCapability:
         self,
         ctx: Context,
         sections: list[tuple[str, str]],
-        book_titles: Optional[list[str]],
+        book_titles: list[str] | None,
         preamble: str = "",
     ) -> tuple[str, list]:
         """sections: [(分节标题, 检索/合成用子查询)]。list 模式：逐节裸拼（split / assume 共用）。
@@ -612,7 +611,7 @@ class QaCapability:
         return "".join(parts).strip(), all_nodes
 
     # ── helpers：章节 / 检索 / 流式合成 ──────────────────────────────
-    def _book_chapters(self, book_titles: Optional[list[str]]) -> list[str]:
+    def _book_chapters(self, book_titles: list[str] | None) -> list[str]:
         """取单一选定书的去重 chapter 列表；未选或多选 → []（结构缺失，倒向内容主导）。"""
         if not book_titles or len(book_titles) != 1:
             return []
@@ -631,19 +630,19 @@ class QaCapability:
             nodes = await reranker.rerank(query, nodes, self.similarity_top_k)
         return nodes
 
-    async def _retrieve_nodes(self, query: str, book_titles: Optional[list[str]]):
+    async def _retrieve_nodes(self, query: str, book_titles: list[str] | None):
         """答案检索：用注入的 retriever/reranker。"""
         return await self._retrieve_with(
             query, book_titles, self.retriever, self.reranker
         )
 
-    async def _probe_retrieve(self, query: str, book_titles: Optional[list[str]]):
+    async def _probe_retrieve(self, query: str, book_titles: list[str] | None):
         """probe 探测召回：用独立的 probe_retriever/probe_reranker（默认 vector / 不重排）。"""
         return await self._retrieve_with(
             query, book_titles, self.probe_retriever, self.probe_reranker
         )
 
-    async def _explain_recall(self, query: str, book_titles: Optional[list[str]]):
+    async def _explain_recall(self, query: str, book_titles: list[str] | None):
         """explain 宽覆盖召回：hybrid + 大 top_k + 不重排（求"有哪几块"，不求精）。"""
         return await self.explain_retriever.retrieve(
             query, index_manager=self.index_manager,
@@ -651,7 +650,7 @@ class QaCapability:
         )
 
     async def _retrieve_all(
-        self, sub_queries: list[str], book_titles: Optional[list[str]]
+        self, sub_queries: list[str], book_titles: list[str] | None
     ) -> list[list]:
         """并发扇出检索：对每个子查询各检索一次，返回与入参同序的 node 列表的列表。"""
         sem = asyncio.Semaphore(self._retrieve_concurrency)

@@ -2,14 +2,12 @@
 import json
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import delete, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.persistence.db import MessageRow, SessionRow
 from core.agent.source_context import SourceRef
-
+from core.persistence.db import MessageRow, SessionRow
 
 TITLE_MAX_CHARS = 20  # 自动标题截取的字符数
 
@@ -29,7 +27,7 @@ async def create_session(db: AsyncSession, title: str = "新会话") -> SessionR
     return row
 
 
-async def get_session(db: AsyncSession, session_id: str) -> Optional[SessionRow]:
+async def get_session(db: AsyncSession, session_id: str) -> SessionRow | None:
     return await db.get(SessionRow, session_id)
 
 
@@ -94,7 +92,7 @@ async def add_message(
     session_id: str,
     role: str,
     content: str,
-    sources: Optional[list[SourceRef]] = None,
+    sources: list[SourceRef] | None = None,
     auto_title_from_first: bool = False,
 ) -> MessageRow:
     """写入一条消息；可选：如果这是第一条 user 消息，用 content 自动设标题"""

@@ -1,6 +1,5 @@
 """会话历史增量摘要单测：plan_overflow（纯函数，无 LLM）+ fold_summary（mock LLM）。"""
 from core.workflow.summarizer import (
-    SUMMARY_MARKER,
     fold_summary,
     plan_overflow,
 )

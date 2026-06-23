@@ -1,4 +1,4 @@
-from eval.harness.sut import map_doc_result, RagOutput
+from eval.harness.sut import map_doc_result
 
 
 class _Node:
@@ -60,7 +60,6 @@ def test_agent_empty_when_blank_answer():
 
 
 # ── AgentSystem + _NullCtx ──
-import pytest
 from eval.harness.sut import AgentSystem, _NullCtx
 
 

@@ -82,3 +82,21 @@ def write_detail_csv(detail: list[dict], path: str) -> None:
         w.writeheader()
         for d in detail:
             w.writerow(d)
+
+
+def write_detail_csv_per_variant(detail: list[dict], base_path: str) -> dict[str, str]:
+    """按 variant 分组，每条路线各写一个 CSV（文件名在 base_path 上插入 variant）。
+
+    例：base_path=compare_detail.csv → compare_detail_naive_rag.csv 等。
+    保持各路线首次出现的顺序，返回 {variant: 写出路径}。
+    """
+    groups: dict[str, list[dict]] = {}
+    for d in detail:
+        groups.setdefault(d.get("variant", "unknown"), []).append(d)
+    root, ext = os.path.splitext(base_path)
+    written: dict[str, str] = {}
+    for variant, rows in groups.items():
+        path = f"{root}_{variant}{ext}"
+        write_detail_csv(rows, path)
+        written[variant] = path
+    return written

@@ -8,7 +8,6 @@ selection 同时产出 FunctionTool 列表与 system prompt 的工具清单文�
 共享依赖与 per-run 状态收口到 ToolContext。
 """
 from dataclasses import dataclass, field
-from typing import Optional
 
 from core.retrieval.rerank import Reranker
 from core.retrieval.retrieve import Retriever, make_retriever
@@ -27,7 +26,7 @@ class ToolContext:
     """
     index_manager: object
     similarity_top_k: int = 5
-    scope: Optional[list[str]] = None
+    scope: list[str] | None = None
     sources: list = field(default_factory=list)
     searched_queries: set = field(default_factory=set)  # 本轮已检索过的 query（归一化 key），防重复空转
     retriever: "Retriever" = field(default_factory=lambda: make_retriever("vector"))
@@ -39,7 +38,7 @@ class ToolContext:
 class ToolSpec:
     """一个工具选择项：name 指向注册表里的工具；usage 覆盖其默认 prompt_usage（None=用默认）。"""
     name: str
-    usage: Optional[str] = None
+    usage: str | None = None
 
 
 _TOOL_REGISTRY: dict[str, type] = {}  # name → 工具类
@@ -50,7 +49,7 @@ def register_tool(cls):
     _TOOL_REGISTRY[cls.name] = cls
     return cls
 
-def _normalize(selection: Optional[list]) -> list:
+def _normalize(selection: list | None) -> list:
     """selection=None → 注册表全部（登记顺序）；str → ToolSpec；未知名 → ValueError。"""
     if selection is None:
         selection = list(_TOOL_REGISTRY)
@@ -69,7 +68,7 @@ def _usage_of(spec: ToolSpec) -> str:
     return spec.usage or getattr(cls, "prompt_usage", None) or cls.description
 
 
-def assemble_tools(ctx: ToolContext, selection: Optional[list] = None) -> tuple[list, str]:
+def assemble_tools(ctx: ToolContext, selection: list | None = None) -> tuple[list, str]:
     """按 selection 装配工具。返回 (FunctionTool 列表, 编号好的工具清单文本)。
 
     selection 元素可为 str（用默认 usage）或 ToolSpec（可覆盖 usage）；None → 注册表全部、
@@ -81,6 +80,6 @@ def assemble_tools(ctx: ToolContext, selection: Optional[list] = None) -> tuple[
     return tools, prompt
 
 
-def build_book_tools(ctx: ToolContext, selection: Optional[list] = None) -> list:
+def build_book_tools(ctx: ToolContext, selection: list | None = None) -> list:
     """仅取工具列表（不需要 prompt 清单的调用方用）。selection 同 assemble_tools。"""
     return assemble_tools(ctx, selection)[0]

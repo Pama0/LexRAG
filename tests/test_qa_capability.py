@@ -3,7 +3,7 @@
 从 DocQueryWorkflow 抽出后，QA 的检索/合成实质逻辑在此独立测，不经 workflow
 step 机制。真实合成（LLM）/真实 chroma 不在范围，stub 掉检索 / token 源 / 拆解。
 """
-from core.workflow.qa_capability import QaCapability, AnswerDeltaEvent
+from core.workflow.qa_capability import AnswerDeltaEvent, QaCapability
 from core.workflow.query_dimension import Dimension
 
 
@@ -641,6 +641,7 @@ async def test_split_synthesize_single_subquery_degrades_to_single():
 
 # ── explain：宽召回 → 列骨架 → 每节点检索 → 教学体合成 ──────────────────
 import pytest
+
 from core.workflow.qa_capability import EmptySkeleton
 
 
@@ -825,7 +826,10 @@ async def test_teach_synthesize_builds_prompt_streams_once_and_emits_deltas():
 
 # ── 异常 + 拒答常量（Task 2：纯加法，验可导入 + 值锁定）─────────────────
 from core.workflow.qa_capability import (
-    OutOfScope, MissingInfo, REFUSAL_TEXT, REFUSAL_FALLBACK,
+    REFUSAL_FALLBACK,
+    REFUSAL_TEXT,
+    MissingInfo,
+    OutOfScope,
 )
 
 
@@ -1147,8 +1151,8 @@ async def test_execute_explain_empty_skeleton_agent_exception_falls_back_to_retr
 async def test_answer_multi_subject_explain_out_of_scope_does_not_abort_turn():
     # 回归（Critical）：多子问题中一个 explain 抛 OutOfScope，整轮不能被中断，
     # 兄弟子问题答案必须出现在最终返回文本里。
-    from core.workflow.qa_capability import _SubDecision
     from core.workflow.components.front_door import RoutedSubQuery
+    from core.workflow.qa_capability import _SubDecision
     qa = _qa()
 
     ds = {
@@ -1311,7 +1315,7 @@ async def test_answer_partial_missing_info_appends_clarify():
 
 
 async def test_answer_all_out_of_scope_pure_refusal():
-    from core.workflow.qa_capability import _SubDecision, REFUSAL_TEXT
+    from core.workflow.qa_capability import REFUSAL_TEXT, _SubDecision
     ds = [_SubDecision("PG的MVCC", "out_of_scope", reason="库外")]
     qa, routed = _qa_answer_stub(ds, {})
     ans, nodes, meta = await qa.answer(FakeCtx(), routed, None)

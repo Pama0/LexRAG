@@ -1,5 +1,4 @@
 import re
-from typing import List, Optional
 
 import fitz
 from llama_index.core.schema import Document
@@ -32,7 +31,7 @@ class BookPDFParser:
         self.chunk_overlap = chunk_overlap
         self.heading_font_size_threshold = heading_font_size_threshold
 
-    def parse(self, pdf_path: str, book_title: str) -> List[Document]:
+    def parse(self, pdf_path: str, book_title: str) -> list[Document]:
         doc = fitz.open(pdf_path)
         try:
             blocks = self._extract_blocks(doc)
@@ -123,7 +122,7 @@ class BookPDFParser:
 
         return sections
 
-    def _match_heading(self, text: str, block: dict) -> Optional[str]:
+    def _match_heading(self, text: str, block: dict) -> str | None:
         is_large = block["font_size"] >= self.heading_font_size_threshold
         is_bold = block.get("is_bold", False)
 
@@ -168,7 +167,7 @@ class BookPDFParser:
 
     def _build_documents(
         self, sections: list, book_title: str, pdf_path: str
-    ) -> List[Document]:
+    ) -> list[Document]:
         documents = []
 
         for section in sections:

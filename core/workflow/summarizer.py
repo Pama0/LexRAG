@@ -12,7 +12,6 @@ DB 读写与触发编排留在装配层（api/routers/chat.py），与既有 _pe
 memory 只含 user/assistant 文本（无 tool 消息），故无需 Condenser 的孤儿 tool safe-cut。
 """
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ def _render_history(messages) -> str:
     return "\n".join(f"{m.role}: {m.content}" for m in messages if m.content)
 
 
-async def fold_summary(llm, prev_summary: Optional[str], overflow) -> str:
+async def fold_summary(llm, prev_summary: str | None, overflow) -> str:
     """把旧摘要 + 溢出消息折成新摘要。
 
     失败【抛给调用方】决定（不在此静默吞）：压缩在答复送出后才跑，调用方负责

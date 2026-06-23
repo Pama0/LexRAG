@@ -7,7 +7,6 @@ explain 专用。结构【自上而下】来自固定教学维度词表（是什
 设计见 docs/superpowers/specs/2026-06-21-explain-lecturer-synthesis-design.md。
 """
 import logging
-from typing import List, Optional
 
 from llama_index.core.llms import LLM
 
@@ -65,10 +64,10 @@ class AnswerOutliner:
     async def run(
         self,
         query: str,
-        passages: List[str],
-        toc_hint: Optional[List[str]] = None,
+        passages: list[str],
+        toc_hint: list[str] | None = None,
         max_items: int = 8,
-    ) -> List[Dimension]:
+    ) -> list[Dimension]:
         toc_text = "、".join(toc_hint) if toc_hint else "（无干净目录，按通用教学常识定\"组成\"）"
         prompt = (
             _OUTLINE_PROMPT.replace("{query}", query)

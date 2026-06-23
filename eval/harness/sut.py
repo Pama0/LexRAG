@@ -65,6 +65,7 @@ class DocQueryWorkflowSystem:
         wf = DocQueryWorkflow(
             index_manager=self._index_manager, llm=self._llm,
             similarity_top_k=self._similarity_top_k, timeout=self._timeout,
+            retriever="hybrid",
             **self._flags,
         )
         try:
@@ -106,3 +107,51 @@ class AgentSystem:
         except Exception as e:  # noqa: BLE001 — 单条异常记 error 不中断
             return RagOutput(f"{type(e).__name__}: {e}", [], "error")
         return map_agent_result(answer, sources)
+
+
+# ── 朴素 RAG 基线（对照组）───────────────────────────────────────────
+NAIVE_PROMPT = """基于以下检索片段回答问题。只依据片段，片段没有的不要编造；
+若片段与问题无关，如实说明知识库中暂无相关内容。
+
+检索片段：
+{context}
+
+问题：{question}
+
+中文作答，结构清晰。"""
+
+
+class NaiveRagSystem:
+    """朴素 RAG 基线：vector 检索 top-k → 拼 prompt → 单次 LLM 作答。
+
+    作对照组：无路由 / 拆分 / agent / probe，凸显 workflow、agent 相对它的增益。
+    LLM 调用走传入的 llm 实例（与其它 SUT 同一被挂表实例）→ token/时耗照常计入。
+    """
+
+    def __init__(self, index_manager, llm, similarity_top_k: int = 5):
+        self._index_manager = index_manager
+        self._llm = llm
+        self._similarity_top_k = similarity_top_k
+
+    async def answer(self, query: str, book_titles=None) -> RagOutput:
+        from llama_index.core.base.llms.types import ChatMessage, MessageRole
+
+        from core.retrieval.retrieve import make_retriever
+
+        try:
+            nodes = await make_retriever("vector").retrieve(
+                query, index_manager=self._index_manager,
+                book_titles=book_titles, top_k=self._similarity_top_k,
+            )
+            if not nodes:
+                return RagOutput("", [], "empty")
+            context = "\n---\n".join(_node_text(n) for n in nodes)
+            prompt = NAIVE_PROMPT.format(context=context, question=query)
+            resp = await self._llm.achat(
+                [ChatMessage(role=MessageRole.USER, content=prompt)]
+            )
+            text = (resp.message.content or "").strip()
+            contexts = [_node_text(n) for n in nodes]
+            return RagOutput(text, contexts, "answered" if text else "empty")
+        except Exception as e:  # noqa: BLE001 — 单条异常记 error 不中断
+            return RagOutput(f"{type(e).__name__}: {e}", [], "error")

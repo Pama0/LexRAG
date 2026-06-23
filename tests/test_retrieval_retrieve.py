@@ -1,16 +1,14 @@
 """core/retrieval/retrieve.py 单测：纯工具 + VectorRetriever + make_retriever。"""
 import pytest
-
 from llama_index.core.schema import NodeWithScore, TextNode
 from llama_index.core.vector_stores import MetadataFilters
 
 from core.retrieval.retrieve import (
-    Retriever,
     VectorRetriever,
-    build_book_filters,
     bm25_tokenize,
-    rrf_fuse,
+    build_book_filters,
     make_retriever,
+    rrf_fuse,
 )
 
 

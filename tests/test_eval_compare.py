@@ -27,15 +27,19 @@ def test_render_delta_table_none_metric_shows_dash():
     assert "—" in md
 
 
-# ── build_sut 工厂与两路线 VARIANTS ──────────────────────────────
-from eval.harness.compare import build_sut, AGENT_VARIANT, WORKFLOW_VARIANT, VARIANTS
-from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem
+# ── build_sut 工厂与三路线 VARIANTS ──────────────────────────────
+from eval.harness.compare import (
+    AGENT_VARIANT,
+    NAIVE_VARIANT,
+    VARIANTS,
+    WORKFLOW_VARIANT,
+    build_sut,
+)
+from eval.harness.sut import AgentSystem, DocQueryWorkflowSystem, NaiveRagSystem
 
 
-def test_variants_are_exactly_two_routes():
-    assert set(VARIANTS) == {WORKFLOW_VARIANT, AGENT_VARIANT}
-    assert VARIANTS[WORKFLOW_VARIANT] == {}
-    assert VARIANTS[AGENT_VARIANT] is None
+def test_variants_are_three_routes():
+    assert set(VARIANTS) == {WORKFLOW_VARIANT, NAIVE_VARIANT, AGENT_VARIANT}
 
 
 def test_build_sut_agent_returns_agent_system():
@@ -46,6 +50,11 @@ def test_build_sut_agent_returns_agent_system():
 def test_build_sut_workflow_returns_workflow_system():
     sut = build_sut(WORKFLOW_VARIANT, index_manager=object(), llm=object())
     assert isinstance(sut, DocQueryWorkflowSystem)
+
+
+def test_build_sut_naive_returns_naive_system():
+    sut = build_sut(NAIVE_VARIANT, index_manager=object(), llm=object())
+    assert isinstance(sut, NaiveRagSystem)
 
 
 def test_build_sut_unknown_name_raises():
@@ -69,7 +78,7 @@ def test_resolve_baseline_absent_falls_back_to_first():
 # ── 打分函数（原 run_eval，已搬入 compare.py）────────────────────────
 from dataclasses import dataclass
 
-from eval.harness.compare import aggregate, score_row, _row_to_dict, load_testset
+from eval.harness.compare import _row_to_dict, aggregate, score_row
 from eval.harness.metrics import MetricSpec
 from eval.harness.sut import RagOutput
 
