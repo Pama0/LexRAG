@@ -25,21 +25,31 @@
 
 ## 架构
 
+检索层评测**自成一个子包 `eval/retrieval/`**，数据、结果、代码与端到端评测（`eval/harness`、`eval/datagen`、`eval/dataset`、`eval/results`）完全隔离，整体仍在 `eval/` 下。
+
 ```
-eval/datagen/label_retrieval.py     # 阶段一:离线 pooling + LLM 判定 → 产标注(调 LLM,一次性)
-eval/dataset/golden.retrieval.jsonl # 冻结标注:query → 相关 chunk_id 集合
-eval/harness/retrieval_metrics.py   # 纯函数:recall@k / precision@k / mrr / ndcg@k
-eval/harness/retrieval_eval.py      # 阶段二:跑 retriever → 算指标 → 出表(零 LLM,反复跑)
-tests/test_retrieval_metrics.py     # 指标纯函数单测
+eval/
+├── harness/  datagen/  dataset/  results/   # 端到端评测(现状,不动)
+└── retrieval/                               # ← 新增:检索层评测,自成一包
+    ├── __init__.py
+    ├── label.py                             # 阶段一:pooling + LLM 判定(调 LLM,一次性)
+    ├── metrics.py                           # 纯函数:recall@k / precision@k / mrr / ndcg@k
+    ├── run.py                               # 阶段二:跑 retriever → 算指标 → 出表(零 LLM)
+    ├── dataset/
+    │   └── golden.retrieval.jsonl           # 冻结标注:query → 相关 chunk_id 集合(独立)
+    └── results/
+        └── retrieval_eval.csv               # 输出(独立)
+
+tests/test_retrieval_metrics.py             # 指标纯函数单测(沿用项目根 tests/ 约定)
 ```
 
-依赖方向沿用 `eval/` 现状：评测侧脚本从项目根以 `python -m eval.harness.xxx` 运行，复用 `core.retrieval.make_retriever`、`eval.config`、`RAGIndexManager`。
+依赖方向沿用 `eval/` 现状：脚本从项目根以 `python -m eval.retrieval.xxx` 运行，复用 `core.retrieval.make_retriever`、`eval.config`、`RAGIndexManager`。命名取 `eval.retrieval`（与 `core.retrieval` 路径不同不冲突）。
 
 ## 组件
 
-### 1. `label_retrieval.py`（阶段一，调 LLM，一次性）
+### 1. `eval/retrieval/label.py`（阶段一，调 LLM，一次性）
 
-**职责**：把 golden query 标注成「相关 chunk_id 集合」，冻结到 `golden.retrieval.jsonl`。
+**职责**：把 golden query 标注成「相关 chunk_id 集合」，冻结到 `eval/retrieval/dataset/golden.retrieval.jsonl`。
 
 - **入口**：读 `eval/dataset/golden.jsonl`，取每条 `user_input`，**不走 front_door**。
 - **只标可答类**：`retrievable / pending_split / other / ambiguous` 才标；`missing_info / out_of_scope`（`reference=""`）跳过——它们本无相关 chunk，进 Recall 分母无意义。
@@ -51,9 +61,9 @@ tests/test_retrieval_metrics.py     # 指标纯函数单测
   ```
   - 跳过类 / 相关集为空的 query 也落盘，`skipped: true`，**不计入指标**（评测阶段过滤）。
 - **收尾**：打印每条 pooling 命中数与零命中 query 列表，提醒人工抽检（pooling 法标配——LLM 判定可能漏标，需人工校）。
-- **安全**：写到 `golden.retrieval.jsonl`，人工抽检后即用；与 `fill_reference.py` 的「先写 .with_ref 再人工替换」风格一致，这里直接产最终文件名但显式提示抽检。
+- **安全**：写到 `eval/retrieval/dataset/golden.retrieval.jsonl`，人工抽检后即用；与 `fill_reference.py` 的「先写 .with_ref 再人工替换」风格一致，这里直接产最终文件名但显式提示抽检。
 
-### 2. `retrieval_metrics.py`（纯函数，零依赖）
+### 2. `eval/retrieval/metrics.py`（纯函数，零依赖）
 
 **职责**：给定一条 query 的检索结果与标注，算各 k 上的指标。纯函数，对齐 `metrics.py` 「映射可离线单测」的现有风格。
 
@@ -65,17 +75,17 @@ tests/test_retrieval_metrics.py     # 指标纯函数单测
 - `K_VALUES = (1, 3, 5, 10)`（常量）。
 - 边界：`relevant` 为空时该 query 不应进来（评测层已过滤）；防御性返回时约定明确（如 recall 分母为 0 视为跳过，不返回 NaN 污染均值）。
 
-### 3. `retrieval_eval.py`（阶段二，零 LLM，反复跑）
+### 3. `eval/retrieval/run.py`（阶段二，零 LLM，反复跑）
 
 **职责**：跑被测 retriever，算并聚合指标，出对比表。
 
-- 加载 `golden.retrieval.jsonl`，**过滤掉 `skipped: true`**。
+- 加载 `eval/retrieval/dataset/golden.retrieval.jsonl`，**过滤掉 `skipped: true`**。
 - 对每个被测 retriever（默认 `["vector", "hybrid"]`，CLI `--retrievers` 可加）：逐 query 调 `make_retriever(name).retrieve(query, index_manager=..., book_titles=None, top_k=max(K_VALUES))`，**绕过 front_door**，取有序 `chunk_id` 列表（`node.node_id`）。
 - 每条算各 k 指标 → **聚合均值**；同时**按 `category` 分组**出明细（看 hybrid 在哪类问题上赢/输）。
-- 输出：console 对比表 + `eval/results/retrieval_eval.csv`（对齐 `compare.py`/`report.py` 的 CSV 风格）。
-- 命令：`python -m eval.harness.retrieval_eval --retrievers vector hybrid`
+- 输出：console 对比表 + `eval/retrieval/results/retrieval_eval.csv`（对齐 `compare.py`/`report.py` 的 CSV 风格）。
+- 命令：`python -m eval.retrieval.run --retrievers vector hybrid`
 
-### 4. `test_retrieval_metrics.py`
+### 4. `tests/test_retrieval_metrics.py`
 
 指标纯函数单测：手造 `retrieved/relevant` 小例子，断言 recall/precision/mrr/ndcg 已知值（含全命中、零命中、部分命中、k 截断、相关集大于 k 等边界）。
 
@@ -99,19 +109,19 @@ golden.retrieval.jsonl ──过滤skipped──▶ for retriever in [vector, hy
                                        retrieval_metrics(纯函数)
                                             │
                                             ▼
-                                   均值 + 按category明细 ─▶ console 表 + results/retrieval_eval.csv
+                                   均值 + 按category明细 ─▶ console 表 + eval/retrieval/results/retrieval_eval.csv
 ```
 
 ## 错误处理
 
 - **标注阶段**：单 query 判定失败（LLM 异常 / JSON 解析失败）→ 记 warning，该 query 标 `skipped: true` 落盘，不中断整体（对齐 `compare.py` 单条异常记 error 不中断的风格）。
 - **评测阶段**：单 retriever 单 query 检索异常 → 记 warning，该条指标记缺失，不计入该 retriever 均值，不中断。
-- **空标注文件 / 全 skipped** → 明确报错提示先跑 `label_retrieval.py`。
+- **空标注文件 / 全 skipped** → 明确报错提示先跑 `python -m eval.retrieval.label`。
 
 ## 测试策略
 
-- `retrieval_metrics.py` 纯函数 → `test_retrieval_metrics.py` 离线单测（无需 LLM / chroma）。
-- `label_retrieval.py` / `retrieval_eval.py` 涉及真实 chroma + LLM，属集成 smoke，依赖 `.env` 与已入库的 `chroma_db`，不进 CI 单测，靠人工运行 + 抽检。
+- `eval/retrieval/metrics.py` 纯函数 → `tests/test_retrieval_metrics.py` 离线单测（无需 LLM / chroma）。
+- `eval/retrieval/label.py` / `run.py` 涉及真实 chroma + LLM，属集成 smoke，依赖 `.env` 与已入库的 `chroma_db`，不进 CI 单测，靠人工运行 + 抽检。
 
 ## 非目标（YAGNI）
 
