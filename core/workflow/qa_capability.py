@@ -288,81 +288,6 @@ class QaCapability:
                 logger.warning("simple 升级 agent 失败，回落单轮：%s", exc)
         return await self.retrieve(ctx, q, scope, nodes=nodes)
 
-    async def answer(
-        self,
-        ctx: Context,
-        sub_queries: list,                 # list[RoutedSubQuery]
-        book_titles: Optional[list[str]],
-        probe: bool = True,
-        disable_scope: bool = False,
-    ) -> tuple[str, list, dict]:
-        """消费 front_door 路由计划：QA 子问题逐个判定+执行，converse 子问题装饰，合并。
-
-        - 并行只用于判定阶段（无用户可见输出）；执行/合成按路由计划顺序串行（保流式顺序）。
-        - 单子问题：无分节标题、无合并装饰，等价旧单路径。
-        - 部分非 ok：先答 ok 的 / converse 的，末尾追加 missing_info 反问 / out_of_scope 提示。
-        - 全无可见输出：纯拒答（out_of_scope→REFUSAL_TEXT）/反问（missing_info）。
-        """
-        qa_subs = [s for s in sub_queries if s.action == "dispatch_qa"]
-        # 阶段一：并行判定 QA 子问题（无用户可见输出）
-        decided = await asyncio.gather(
-            *(self._decide_subq(s.query, book_titles, probe=probe, disable_scope=disable_scope)
-              for s in qa_subs)
-        )
-        # 按 query 文本索引判定结果：依赖 splitter 产出的子问题文本互不相同（铁律已约束）。
-        # 若极端情况下拆出两个同文本 dispatch_qa 子问题，后者覆盖前者、且输出循环会各执行一次。
-        by_query = {d.query: d for d in decided}
-        oks = [d for d in decided if d.verdict == "ok"]
-        missing = [d for d in decided if d.verdict == "missing_info"]
-        oos = [d for d in decided if d.verdict == "out_of_scope"]
-        multi = len(sub_queries) > 1
-        meta = {
-            "categories": [d.category for d in oks],
-            "sub_count": len(sub_queries),
-            "category": (oks[0].category if oks else "out_of_scope")
-            if len(sub_queries) == 1 else "multi",
-        }
-
-        parts: list[str] = []
-        all_nodes: list = []
-        produced_visible = False
-        # 按路由计划顺序输出：converse 装饰 + ok 子问题执行
-        for s in sub_queries:
-            if s.action == "converse":
-                text = s.reply or REFUSAL_FALLBACK
-                if multi:
-                    heading = f"\n## {s.query}\n"
-                    ctx.write_event_to_stream(AnswerDeltaEvent(delta=heading))
-                    parts.append(heading)
-                ctx.write_event_to_stream(AnswerDeltaEvent(delta=text))
-                parts.append(text)
-                produced_visible = True
-                continue
-            d = by_query.get(s.query)
-            if d is None or d.verdict != "ok":
-                continue
-            if multi:
-                heading = f"\n## {d.query}\n"
-                ctx.write_event_to_stream(AnswerDeltaEvent(delta=heading))
-                parts.append(heading)
-            ans, nodes = await self._execute_subq(ctx, d.query, d.category, d.scope)
-            parts.append(ans)
-            all_nodes.extend(nodes)
-            produced_visible = True
-
-        # 全无可见输出（无 ok、无 converse）：纯拒答/反问
-        if not produced_visible:
-            if missing:
-                return (missing[0].clarify_question or REFUSAL_FALLBACK), [], meta
-            return REFUSAL_TEXT, [], meta
-
-        # 末尾装饰：out_of_scope / missing_info（仅多问题）
-        tail = self._compose_tail(oos, missing) if multi else ""
-        if tail:
-            ctx.write_event_to_stream(AnswerDeltaEvent(delta=tail))
-            parts.append(tail)
-        return "".join(parts).strip(), all_nodes, meta
-
     async def run_workers(
         self,
         ctx: Context,
@@ -415,17 +340,6 @@ class QaCapability:
             if len(sub_queries) == 1 else "multi",
         }
         return materials, nodes, meta
-
-    @staticmethod
-    def _compose_tail(oos: list, missing: list) -> str:
-        """合并末尾提示：库外子问题如实告知 + 信息不足子问题反问。"""
-        lines: list[str] = []
-        if oos:
-            names = "、".join(f"「{d.query}」" for d in oos)
-            lines.append(f"另外，{names} 知识库里暂未收录相关内容，无法作答。")
-        for d in missing:
-            lines.append(d.clarify_question or f"关于「{d.query}」，能再说具体一点吗？")
-        return ("\n\n" + "\n".join(lines)) if lines else ""
 
     def _format_probe(self, nodes: list, book_titles) -> str:
         """探测召回 → 喂 judge 的信号：命中数 + 章节分布 + top 截断片段。"""
